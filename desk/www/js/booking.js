@@ -12,7 +12,7 @@ const BookingPage = {
   pageInfo: null,
 
   async render(el, bookingTypeId) {
-    el.innerHTML = '<div class="booking-page"><p>Loading...</p></div>';
+    el.innerHTML = '<div class="booking"><p>Loading...</p></div>';
     try {
       const [info, typesData] = await Promise.all([
         CalendarAPI.getPublicInfo(),
@@ -20,7 +20,7 @@ const BookingPage = {
       ]);
 
       if (!info.enabled) {
-        el.innerHTML = '<div class="booking-page"><h2>Booking Unavailable</h2><p>This booking page is not currently active.</p></div>';
+        el.innerHTML = '<div class="booking"><h2>Booking Unavailable</h2><p>This booking page is not currently active.</p></div>';
         return;
       }
 
@@ -28,7 +28,7 @@ const BookingPage = {
       const bt = types.find(t => t.id === bookingTypeId);
       if (!bt) {
         el.innerHTML = `
-          <div class="booking-page">
+          <div class="booking">
             <h2>${App.esc(info.title)}</h2>
             <p>${App.esc(info.description)}</p>
             <p class="booking-ship">hosted by ${App.esc(info.ship)}</p>
@@ -36,11 +36,11 @@ const BookingPage = {
               ${types.length === 0 ? '<p>No booking types available</p>' : ''}
               ${types.map(t => `
                 <a href="#/book/${t.id}" class="booking-type-card">
-                  <div class="bt-color" style="background:${App.hexColor(t.color)}"></div>
-                  <div class="bt-info">
-                    <div class="bt-name">${App.esc(t.name)}</div>
-                    <div class="bt-meta">${t.duration} minutes</div>
-                    ${t.description ? `<div class="bt-desc">${App.esc(t.description)}</div>` : ''}
+                  <div class="booking-type-color" style="background:${App.hexColor(t.color)}"></div>
+                  <div class="booking-type-info">
+                    <div class="booking-type-name">${App.esc(t.name)}</div>
+                    <div class="booking-type-meta">${t.duration} minutes</div>
+                    ${t.description ? `<div class="booking-type-desc">${App.esc(t.description)}</div>` : ''}
                   </div>
                 </a>
               `).join('')}
@@ -57,7 +57,7 @@ const BookingPage = {
       this.currentDayOffset = 0;
       this.renderBookingFlow(el, bt, info);
     } catch (e) {
-      el.innerHTML = '<div class="booking-page"><h2>Error</h2><p>Could not load booking page.</p></div>';
+      el.innerHTML = '<div class="booking"><h2>Error</h2><p>Could not load booking page.</p></div>';
     }
   },
 
@@ -69,7 +69,7 @@ const BookingPage = {
     this.currentWeekStart.setDate(today.getDate() - dow);
 
     el.innerHTML = `
-      <div class="booking-page">
+      <div class="booking">
         <div class="booking-header">
           <a href="#/book/" class="back-link">&larr; Back</a>
           <h2>${App.esc(bt.name)}</h2>
@@ -78,11 +78,11 @@ const BookingPage = {
         </div>
         <div class="booking-week-nav">
           <button onclick="BookingPage.prevWeek()" class="btn-icon">&larr;</button>
-          <span id="booking-week-label"></span>
+          <span class="booking-week-label"></span>
           <button onclick="BookingPage.nextWeek()" class="btn-icon">&rarr;</button>
         </div>
-        <div id="booking-cal-view"></div>
-        <div id="booking-form-panel" style="display:none"></div>
+        <div class="booking-cal-view"></div>
+        <div class="booking-form-panel" style="display:none"></div>
       </div>
     `;
 
@@ -100,13 +100,12 @@ const BookingPage = {
   },
 
   async loadWeekAndRender() {
-    const container = document.getElementById('booking-cal-view');
+    const container = document.querySelector('.booking-cal-view');
     if (!container) return;
 
     const bt = this.bookingType;
     const ws = this.currentWeekStart;
 
-    // Only show loading if we need to fetch
     const allCached = Array.from({length: 7}, (_, d) => {
       const date = new Date(ws);
       date.setDate(date.getDate() + d);
@@ -118,7 +117,7 @@ const BookingPage = {
     const weekEnd = new Date(ws);
     weekEnd.setDate(weekEnd.getDate() + 6);
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const label = document.getElementById('booking-week-label');
+    const label = document.querySelector('.booking-week-label');
     if (label) {
       if (ws.getMonth() === weekEnd.getMonth()) {
         label.textContent = `${months[ws.getMonth()]} ${ws.getDate()} - ${weekEnd.getDate()}, ${ws.getFullYear()}`;
@@ -183,27 +182,27 @@ const BookingPage = {
     const totalHours = maxHour - minHour;
 
     const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    let html = '<div class="booking-week-grid">';
+    let html = '<div class="bgrid">';
 
     // Header row
-    html += '<div class="bw-header"><div class="bw-time-gutter"></div>';
+    html += '<div class="bgrid-header"><div class="bgrid-gutter"></div>';
     for (let d = 0; d < 7; d++) {
       const date = new Date(ws);
       date.setDate(date.getDate() + d);
       const isToday = date.getTime() === today.getTime();
       const isPast = date < today;
-      html += `<div class="bw-day-header ${isToday ? 'today' : ''} ${isPast ? 'past' : ''}">${dayNames[d]} ${date.getDate()}</div>`;
+      html += `<div class="bgrid-day-head ${isToday ? 'is-today' : ''} ${isPast ? 'is-past' : ''}">${dayNames[d]} ${date.getDate()}</div>`;
     }
     html += '</div>';
 
     // Body: time gutter + 7 day columns
-    html += `<div class="bw-body" style="height:${totalHours * 60}px">`;
+    html += `<div class="bgrid-body" style="height:${totalHours * 60}px">`;
 
     // Time labels
-    html += '<div class="bw-time-col">';
+    html += '<div class="bgrid-times">';
     for (let h = minHour; h < maxHour; h++) {
       const lbl = h === 0 ? '12 AM' : h < 12 ? h + ' AM' : h === 12 ? '12 PM' : (h-12) + ' PM';
-      html += `<div class="bw-time-label">${lbl}</div>`;
+      html += `<div class="bgrid-time">${lbl}</div>`;
     }
     html += '</div>';
 
@@ -211,12 +210,11 @@ const BookingPage = {
     for (let d = 0; d < 7; d++) {
       const date = new Date(ws);
       date.setDate(date.getDate() + d);
-      const dayStart = Math.floor(date.getTime() / 1000);
       const slots = weekSlots[d];
 
-      html += '<div class="bw-day-col">';
+      html += '<div class="bgrid-col">';
       for (let h = minHour; h < maxHour; h++) {
-        html += '<div class="bw-hour-cell"></div>';
+        html += '<div class="bgrid-hour"></div>';
       }
       slots.forEach(s => {
         const sDate = new Date(s * 1000);
@@ -225,8 +223,8 @@ const BookingPage = {
         const height = Math.max((durationSec / 3600) * 60, 20);
         const timeStr = sDate.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
         const selected = this.selectedSlot === s;
-        html += `<div class="bw-slot ${selected ? 'selected' : ''}" style="top:${top}px;height:${height}px"
-                      onclick="BookingPage.pickSlot(${s})" title="${timeStr}">${timeStr}</div>`;
+        html += `<button class="bgrid-slot ${selected ? 'is-selected' : ''}" style="top:${top}px;height:${height}px"
+                      onclick="BookingPage.pickSlot(${s})" title="${timeStr}">${timeStr}</button>`;
       });
       html += '</div>';
     }
@@ -236,11 +234,9 @@ const BookingPage = {
 
   renderDayView(container, weekSlots) {
     const ws = this.currentWeekStart;
-    const bt = this.bookingType;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Clamp day offset to 0-6
     if (this.currentDayOffset < 0) this.currentDayOffset = 0;
     if (this.currentDayOffset > 6) this.currentDayOffset = 6;
 
@@ -267,7 +263,7 @@ const BookingPage = {
       slots.forEach(s => {
         const timeStr = new Date(s * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
         const selected = this.selectedSlot === s;
-        html += `<button class="slot-btn ${selected ? 'selected' : ''}" onclick="BookingPage.pickSlot(${s})">${timeStr}</button>`;
+        html += `<button class="slot-btn ${selected ? 'is-selected' : ''}" onclick="BookingPage.pickSlot(${s})">${timeStr}</button>`;
       });
       html += '</div>';
     }
@@ -284,7 +280,7 @@ const BookingPage = {
     const timeStr = date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
     const endTimeStr = endDate.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
 
-    const panel = document.getElementById('booking-form-panel');
+    const panel = document.querySelector('.booking-form-panel');
     if (panel) {
       panel.style.display = 'block';
       panel.innerHTML = `
@@ -294,19 +290,19 @@ const BookingPage = {
             ${timeStr} - ${endTimeStr} (${bt.duration} min)
           </div>
           <form onsubmit="BookingPage.submitBooking(event, '${bt.id}', ${startUnix})">
-            <div class="form-group">
+            <div class="field">
               <label>Your Name</label>
               <input type="text" name="bookerName" required autofocus>
             </div>
-            <div class="form-group">
+            <div class="field">
               <label>Email</label>
               <input type="email" name="email" required>
             </div>
-            <div class="form-group">
+            <div class="field">
               <label>Notes (optional)</label>
               <textarea name="notes" rows="3"></textarea>
             </div>
-            <div class="form-actions">
+            <div class="dialog-actions">
               <button type="button" onclick="BookingPage.cancelSelection()" class="btn-sm">Cancel</button>
               <button type="submit" class="btn-primary">Confirm Booking</button>
             </div>
@@ -321,7 +317,7 @@ const BookingPage = {
 
   cancelSelection() {
     this.selectedSlot = null;
-    const panel = document.getElementById('booking-form-panel');
+    const panel = document.querySelector('.booking-form-panel');
     if (panel) panel.style.display = 'none';
     this.loadWeekAndRender();
   },
@@ -329,7 +325,7 @@ const BookingPage = {
   prevWeek() {
     this.currentWeekStart.setDate(this.currentWeekStart.getDate() - 7);
     this.selectedSlot = null;
-    const panel = document.getElementById('booking-form-panel');
+    const panel = document.querySelector('.booking-form-panel');
     if (panel) panel.style.display = 'none';
     this.loadWeekAndRender();
   },
@@ -337,7 +333,7 @@ const BookingPage = {
   nextWeek() {
     this.currentWeekStart.setDate(this.currentWeekStart.getDate() + 7);
     this.selectedSlot = null;
-    const panel = document.getElementById('booking-form-panel');
+    const panel = document.querySelector('.booking-form-panel');
     if (panel) panel.style.display = 'none';
     this.loadWeekAndRender();
   },
@@ -369,8 +365,8 @@ const BookingPage = {
       dayStart.setHours(0, 0, 0, 0);
       const dayCacheKey = `${btId}-${Math.floor(dayStart.getTime() / 1000)}`;
       delete this.slotCache[dayCacheKey];
-      const panel = document.getElementById('booking-form-panel');
-      const container = document.getElementById('booking-cal-view');
+      const panel = document.querySelector('.booking-form-panel');
+      const container = document.querySelector('.booking-cal-view');
       if (container) container.innerHTML = '';
       if (panel) {
         panel.innerHTML = `

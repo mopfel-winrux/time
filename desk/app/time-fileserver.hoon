@@ -133,6 +133,10 @@
         '/apps/time/js/booking.js'
         '/apps/time/css/app.css'
         '/apps/time/manifest.json'
+        '/apps/time/fonts/inter-light.woff2'
+        '/apps/time/fonts/inter-regular.woff2'
+        '/apps/time/fonts/inter-medium.woff2'
+        '/apps/time/fonts/inter-semibold.woff2'
     ==
   ?.  ?|  authenticated
           (~(has in public-paths) url.request)
@@ -179,14 +183,15 @@
   =/  content-type=@t  (rsh 3^1 (spat p.mime))
   =/  cache-val=@t
     ?+  u.ext  'max-age=3600'
-      %css  'max-age=3600'
-      %js   'max-age=3600'
-      %svg  'max-age=86400'
-      %png  'max-age=86400'
-      %jpg  'max-age=86400'
-      %ico  'max-age=86400'
-      %html  'no-cache'
-      %json  'no-cache'
+      %css    'max-age=3600'
+      %js     'max-age=3600'
+      %svg    'max-age=86400'
+      %png    'max-age=86400'
+      %jpg    'max-age=86400'
+      %ico    'max-age=86400'
+      %woff2  'max-age=31536000, immutable'
+      %html   'no-cache'
+      %json   'no-cache'
     ==
   :_  `q.mime
   [200 ['content-type' content-type] ['cache-control' cache-val] ~]

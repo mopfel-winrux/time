@@ -1,4 +1,4 @@
-// Calendar App - Main SPA
+// Time – Main SPA
 // Hash-based routing with month/week/day/agenda views
 
 const App = {
@@ -10,9 +10,24 @@ const App = {
   selectedCalendars: new Set(),
 
   async init() {
+    this.initTheme();
     window.addEventListener('hashchange', () => this.route());
     window.addEventListener('calendar-state-changed', () => this.refresh());
     await this.loadData();
+    this.route();
+  },
+
+  initTheme() {
+    let t = localStorage.getItem('time-theme');
+    if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  },
+
+  toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('time-theme', next);
     this.route();
   },
 
@@ -83,24 +98,23 @@ const App = {
       { id: 'day', label: 'Day' },
       { id: 'agenda', label: 'Agenda' }
     ];
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     return `
-      <nav class="top-nav">
-        <div class="nav-left">
-          <h1 class="app-title">Calendar</h1>
-          <div class="nav-date">
-            <button onclick="App.prevPeriod()" class="btn-icon">&larr;</button>
-            <button onclick="App.goToday()" class="btn-sm">Today</button>
-            <button onclick="App.nextPeriod()" class="btn-icon">&rarr;</button>
-            <span class="current-date">${this.formatCurrentDate(activeView)}</span>
+      <nav class="nav">
+        <div class="nav-period">
+          <button onclick="App.prevPeriod()" class="btn-icon">&larr;</button>
+          <button onclick="App.goToday()" class="btn-sm">Today</button>
+          <button onclick="App.nextPeriod()" class="btn-icon">&rarr;</button>
+          <h1 class="nav-title">${this.formatCurrentDate(activeView)}</h1>
+        </div>
+        <div class="nav-controls">
+          <div class="nav-views">
+            ${views.map(v => `
+              <a href="#/${v.id}" class="view-btn ${activeView === v.id ? 'is-active' : ''}">${v.label}</a>
+            `).join('')}
           </div>
-        </div>
-        <div class="nav-views">
-          ${views.map(v => `
-            <a href="#/${v.id}" class="view-btn ${activeView === v.id ? 'active' : ''}">${v.label}</a>
-          `).join('')}
-        </div>
-        <div class="nav-right">
-          <button onclick="App.showCreateEvent()" class="btn-primary">+ Event</button>
+          <button onclick="App.showCreateEvent()" class="btn-primary">New event</button>
+          <button onclick="App.toggleTheme()" class="theme-toggle">${isDark ? 'Light' : 'Dark'}</button>
         </div>
       </nav>
     `;
@@ -108,24 +122,23 @@ const App = {
 
   renderSidebar(activeView) {
     const links = [
-      { id: 'calendars', label: 'Calendars', icon: 'cal' },
-      { id: 'booking-types', label: 'Booking Types', icon: 'book' },
-      { id: 'availability', label: 'Availability', icon: 'clock' },
-      { id: 'bookings', label: 'Bookings', icon: 'list' },
-      { id: 'import', label: 'Import', icon: 'upload' },
-      { id: 'subscriptions', label: 'Subscriptions', icon: 'sync' },
-      { id: 'settings', label: 'Settings', icon: 'gear' }
+      { id: 'calendars', label: 'Calendars' },
+      { id: 'booking-types', label: 'Booking Types' },
+      { id: 'availability', label: 'Availability' },
+      { id: 'bookings', label: 'Bookings' },
+      { id: 'import', label: 'Import' },
+      { id: 'subscriptions', label: 'Subscriptions' },
+      { id: 'settings', label: 'Settings' }
     ];
     return `
       <aside class="sidebar">
-        <div class="sidebar-section">
-          <h3>Manage</h3>
+        <nav class="sidebar-nav">
           ${links.map(l => `
-            <a href="#/${l.id}" class="sidebar-link ${activeView === l.id ? 'active' : ''}">${l.label}</a>
+            <a href="#/${l.id}" class="sidebar-link ${activeView === l.id ? 'is-active' : ''}">${l.label}</a>
           `).join('')}
-        </div>
-        <div class="sidebar-section">
-          <h3>Calendars</h3>
+        </nav>
+        <div class="sidebar-calendars">
+          <span class="sidebar-label">Calendars</span>
           ${this.calendars.map(c => {
             const isSub = this.subscriptions.some(s => s['calendar-id'] === c.id);
             return `
@@ -157,7 +170,7 @@ const App = {
 
     let html = '<div class="month-grid"><div class="month-header">';
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    dayNames.forEach(d => html += `<div class="day-name">${d}</div>`);
+    dayNames.forEach(d => html += `<div class="month-day-name">${d}</div>`);
     html += '</div><div class="month-body">';
 
     for (let i = 0; i < 42; i++) {
@@ -172,17 +185,17 @@ const App = {
       );
 
       html += `
-        <div class="month-cell ${isToday ? 'today' : ''} ${isMonth ? '' : 'other-month'}"
+        <div class="month-cell ${isToday ? 'is-today' : ''} ${isMonth ? '' : 'is-outside'}"
              onclick="App.showCreateEventAt(${dayStart})">
-          <div class="cell-date">${date.getDate()}</div>
+          <div class="month-date">${date.getDate()}</div>
           ${dayEvents.slice(0, 3).map(e => {
             const cal = this.calendars.find(c => c.id === e['calendar-id']);
-            const color = cal ? this.hexColor(cal.color) : '#398be2';
-            return `<div class="month-event" style="border-left:3px solid ${color}"
-                         onclick="event.stopPropagation();location.hash='#/event/${e.id}'"
-                    >${this.esc(e.title)}</div>`;
+            const color = cal ? this.hexColor(cal.color) : '#d4600a';
+            return `<a href="#/event/${e.id}" class="month-event" onclick="event.stopPropagation()">
+                      <span class="month-event-dot" style="background:${color}"></span>
+                      ${this.esc(e.title)}</a>`;
           }).join('')}
-          ${dayEvents.length > 3 ? `<div class="more-events">+${dayEvents.length - 3} more</div>` : ''}
+          ${dayEvents.length > 3 ? `<div class="month-overflow">+${dayEvents.length - 3} more</div>` : ''}
         </div>
       `;
     }
@@ -197,21 +210,21 @@ const App = {
     startOfWeek.setHours(0, 0, 0, 0);
 
     let html = '<div class="week-grid">';
-    html += '<div class="week-header"><div class="time-gutter"></div>';
+    html += '<div class="week-header"><div class="week-gutter"></div>';
     for (let d = 0; d < 7; d++) {
       const date = new Date(startOfWeek);
       date.setDate(date.getDate() + d);
       const isToday = this.isSameDay(date, new Date());
-      html += `<div class="week-day-header ${isToday ? 'today' : ''}">
+      html += `<div class="week-day-head ${isToday ? 'is-today' : ''}">
         ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]} ${date.getDate()}
       </div>`;
     }
     html += '</div><div class="week-body">';
 
     // Time labels
-    html += '<div class="time-column">';
+    html += '<div class="week-times">';
     for (let h = 0; h < 24; h++) {
-      html += `<div class="time-label">${h === 0 ? '12 AM' : h < 12 ? h + ' AM' : h === 12 ? '12 PM' : (h-12) + ' PM'}</div>`;
+      html += `<div class="week-time">${h === 0 ? '12 AM' : h < 12 ? h + ' AM' : h === 12 ? '12 PM' : (h-12) + ' PM'}</div>`;
     }
     html += '</div>';
 
@@ -222,9 +235,9 @@ const App = {
       const dayEnd = dayStart + 86400;
       const dayEvents = events.filter(e => e.start < dayEnd && e.end > dayStart);
 
-      html += '<div class="week-day-column">';
+      html += '<div class="week-col">';
       for (let h = 0; h < 24; h++) {
-        html += `<div class="hour-cell" onclick="App.showCreateEventAt(${dayStart + h * 3600})"></div>`;
+        html += `<div class="week-hour" onclick="App.showCreateEventAt(${dayStart + h * 3600})"></div>`;
       }
       dayEvents.forEach(e => {
         const eStart = Math.max(e.start, dayStart);
@@ -232,11 +245,12 @@ const App = {
         const top = ((eStart - dayStart) / 3600) * 60;
         const height = Math.max(((eEnd - eStart) / 3600) * 60, 20);
         const cal = this.calendars.find(c => c.id === e['calendar-id']);
-        const color = cal ? this.hexColor(cal.color) : '#398be2';
-        html += `<div class="week-event" style="top:${top}px;height:${height}px;background:${color}"
-                      onclick="event.stopPropagation();location.hash='#/event/${e.id}'">
-          ${this.esc(e.title)}
-        </div>`;
+        const color = cal ? this.hexColor(cal.color) : '#d4600a';
+        html += `<a href="#/event/${e.id}" class="week-event" style="top:${top}px;height:${height}px;--event-color:${color}"
+                    onclick="event.stopPropagation()">
+          <span class="week-event-title">${this.esc(e.title)}</span>
+          <span class="week-event-time">${this.formatTime(e.start)}</span>
+        </a>`;
       });
       html += '</div>';
     }
@@ -251,13 +265,13 @@ const App = {
     const dayEvents = events.filter(e => e.start < dayEnd && e.end > dayStart);
 
     let html = '<div class="day-grid"><div class="day-body">';
-    html += '<div class="time-column">';
+    html += '<div class="week-times">';
     for (let h = 0; h < 24; h++) {
-      html += `<div class="time-label">${h === 0 ? '12 AM' : h < 12 ? h + ' AM' : h === 12 ? '12 PM' : (h-12) + ' PM'}</div>`;
+      html += `<div class="week-time">${h === 0 ? '12 AM' : h < 12 ? h + ' AM' : h === 12 ? '12 PM' : (h-12) + ' PM'}</div>`;
     }
     html += '</div><div class="day-column">';
     for (let h = 0; h < 24; h++) {
-      html += `<div class="hour-cell" onclick="App.showCreateEventAt(${dayStart + h * 3600})"></div>`;
+      html += `<div class="week-hour" onclick="App.showCreateEventAt(${dayStart + h * 3600})"></div>`;
     }
     dayEvents.forEach(e => {
       const eStart = Math.max(e.start, dayStart);
@@ -265,11 +279,12 @@ const App = {
       const top = ((eStart - dayStart) / 3600) * 60;
       const height = Math.max(((eEnd - eStart) / 3600) * 60, 20);
       const cal = this.calendars.find(c => c.id === e['calendar-id']);
-      const color = cal ? this.hexColor(cal.color) : '#398be2';
-      html += `<div class="week-event" style="top:${top}px;height:${height}px;background:${color}"
-                    onclick="event.stopPropagation();location.hash='#/event/${e.id}'">
-        <strong>${this.esc(e.title)}</strong><br>${this.formatTime(e.start)} - ${this.formatTime(e.end)}
-      </div>`;
+      const color = cal ? this.hexColor(cal.color) : '#d4600a';
+      html += `<a href="#/event/${e.id}" class="day-event" style="top:${top}px;height:${height}px;--event-color:${color}"
+                  onclick="event.stopPropagation()">
+        <span class="day-event-title">${this.esc(e.title)}</span>
+        <span class="day-event-time">${this.formatTime(e.start)} - ${this.formatTime(e.end)}</span>
+      </a>`;
     });
     html += '</div></div></div>';
     el.innerHTML = html;
@@ -280,7 +295,7 @@ const App = {
     events.sort((a, b) => a.start - b.start);
     const upcoming = events.filter(e => e.end > Math.floor(Date.now() / 1000));
 
-    let html = '<div class="agenda-list"><h2>Upcoming Events</h2>';
+    let html = '<div class="agenda-list">';
     if (upcoming.length === 0) {
       html += '<p class="empty">No upcoming events</p>';
     }
@@ -292,15 +307,15 @@ const App = {
         lastDate = d;
       }
       const cal = this.calendars.find(c => c.id === e['calendar-id']);
-      const color = cal ? this.hexColor(cal.color) : '#398be2';
+      const color = cal ? this.hexColor(cal.color) : '#d4600a';
       html += `
-        <div class="agenda-event" onclick="location.hash='#/event/${e.id}'">
-          <div class="agenda-color" style="background:${color}"></div>
+        <a href="#/event/${e.id}" class="agenda-event">
+          <span class="agenda-dot" style="background:${color}"></span>
           <div class="agenda-info">
             <div class="agenda-title">${this.esc(e.title)}</div>
             <div class="agenda-time">${this.formatTime(e.start)} - ${this.formatTime(e.end)}</div>
           </div>
-        </div>
+        </a>
       `;
     });
     html += '</div>';
@@ -311,20 +326,24 @@ const App = {
 
   async renderCalendars(el) {
     el.innerHTML = `
-      <div class="manage-view">
-        <div class="manage-header">
+      <div class="manage">
+        <div class="manage-head">
           <h2>Calendars</h2>
-          <button onclick="App.showCreateCalendar()" class="btn-primary">+ Calendar</button>
+          <button onclick="App.showCreateCalendar()" class="btn-primary">New calendar</button>
         </div>
-        <div class="manage-list" id="cal-list">
+        <div class="manage-items">
           ${this.calendars.map(c => `
             <div class="manage-item">
               <span class="cal-dot" style="background:${this.hexColor(c.color)}"></span>
-              <span class="manage-name">${this.esc(c.name)}</span>
-              <span class="manage-meta">${c['event-count'] || 0} events</span>
-              <button onclick="App.editCalendar('${c.id}')" class="btn-sm">Edit</button>
-              <button onclick="App.deleteCalendar('${c.id}')" class="btn-sm btn-danger">Delete</button>
-              <button onclick="App.exportCalendar('${c.id}')" class="btn-sm">Export .ics</button>
+              <div class="manage-body">
+                <div class="manage-name">${this.esc(c.name)}</div>
+                <div class="manage-meta">${c['event-count'] || 0} events</div>
+              </div>
+              <div class="manage-actions">
+                <button onclick="App.editCalendar('${c.id}')" class="btn-sm">Edit</button>
+                <button onclick="App.deleteCalendar('${c.id}')" class="btn-danger">Delete</button>
+                <button onclick="App.exportCalendar('${c.id}')" class="btn-sm">Export .ics</button>
+              </div>
             </div>
           `).join('')}
         </div>
@@ -338,7 +357,7 @@ const App = {
       const data = await CalendarAPI.getEvent(eventId);
       const cal = this.calendars.find(c => c.id === data['calendar-id']);
       el.innerHTML = `
-        <div class="event-detail">
+        <article class="event-detail">
           <div class="event-header">
             <h2>${this.esc(data.title)}</h2>
             <div class="event-actions">
@@ -347,13 +366,16 @@ const App = {
             </div>
           </div>
           <div class="event-meta">
-            <div><strong>When:</strong> ${new Date(data.start * 1000).toLocaleString()} - ${new Date(data.end * 1000).toLocaleString()}</div>
-            ${data.location ? `<div><strong>Where:</strong> ${this.esc(data.location)}</div>` : ''}
-            ${cal ? `<div><strong>Calendar:</strong> <span class="cal-dot" style="background:${this.hexColor(cal.color)}"></span> ${this.esc(cal.name)}</div>` : ''}
-            ${data.description ? `<div><strong>Description:</strong> ${this.esc(data.description)}</div>` : ''}
-            ${data['all-day'] ? '<div><strong>All day event</strong></div>' : ''}
+            <dl>
+              <dt>When</dt>
+              <dd>${new Date(data.start * 1000).toLocaleString()} - ${new Date(data.end * 1000).toLocaleString()}</dd>
+              ${data.location ? `<dt>Where</dt><dd>${this.esc(data.location)}</dd>` : ''}
+              ${cal ? `<dt>Calendar</dt><dd><span class="cal-dot" style="background:${this.hexColor(cal.color)}"></span> ${this.esc(cal.name)}</dd>` : ''}
+              ${data.description ? `<dt>Description</dt><dd>${this.esc(data.description)}</dd>` : ''}
+              ${data['all-day'] ? '<dt>Type</dt><dd>All day event</dd>' : ''}
+            </dl>
           </div>
-        </div>
+        </article>
       `;
     } catch (e) {
       el.innerHTML = '<p>Event not found</p>';
@@ -366,10 +388,10 @@ const App = {
       const pageData = await CalendarAPI.getBookingPage();
       const types = data['booking-types'] || [];
       el.innerHTML = `
-        <div class="manage-view">
-          <div class="manage-header">
+        <div class="manage">
+          <div class="manage-head">
             <h2>Booking Types</h2>
-            <button onclick="App.showCreateBookingType()" class="btn-primary">+ Booking Type</button>
+            <button onclick="App.showCreateBookingType()" class="btn-primary">New booking type</button>
           </div>
           <div class="booking-page-toggle">
             <label>
@@ -378,15 +400,19 @@ const App = {
             </label>
             ${pageData.enabled ? `<div class="booking-url">Booking page: <code>${location.origin}/apps/time/#/book/</code></div>` : ''}
           </div>
-          <div class="manage-list">
+          <div class="manage-items">
             ${types.map(bt => `
               <div class="manage-item">
                 <span class="cal-dot" style="background:${this.hexColor(bt.color)}"></span>
-                <span class="manage-name">${this.esc(bt.name)}</span>
-                <span class="manage-meta">${bt.duration} min${bt.active ? '' : ' (inactive)'}</span>
-                <button onclick="App.editBookingType('${bt.id}')" class="btn-sm">Edit</button>
-                <button onclick="App.deleteBookingType('${bt.id}')" class="btn-sm btn-danger">Delete</button>
-                ${pageData.enabled && bt.active ? `<button onclick="navigator.clipboard.writeText('${location.origin}/apps/time/#/book/${bt.id}')" class="btn-sm">Copy Link</button>` : ''}
+                <div class="manage-body">
+                  <div class="manage-name">${this.esc(bt.name)}</div>
+                  <div class="manage-meta">${bt.duration} min${bt.active ? '' : ' (inactive)'}</div>
+                </div>
+                <div class="manage-actions">
+                  <button onclick="App.editBookingType('${bt.id}')" class="btn-sm">Edit</button>
+                  <button onclick="App.deleteBookingType('${bt.id}')" class="btn-danger">Delete</button>
+                  ${pageData.enabled && bt.active ? `<button onclick="navigator.clipboard.writeText('${location.origin}/apps/time/#/book/${bt.id}')" class="btn-sm">Copy Link</button>` : ''}
+                </div>
               </div>
             `).join('')}
           </div>
@@ -402,8 +428,7 @@ const App = {
       const data = await CalendarAPI.getAvailability();
       const utcRules = data.rules || [];
       const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      // Convert UTC rules to local time for display
-      const offset = new Date().getTimezoneOffset(); // minutes to subtract for local
+      const offset = new Date().getTimezoneOffset();
       const localRules = [];
       for (const rule of utcRules) {
         let startLocal = rule.start - offset;
@@ -415,8 +440,6 @@ const App = {
         if (endLocal >= 1440) { endLocal -= 1440; }
         localRules.push({ day: localDay, start: startLocal, end: endLocal });
       }
-      // Merge split rules back: if two rules on adjacent days form a contiguous block, merge
-      // (e.g. Mon 23:00-24:00 + Tue 0:00-7:00 => Mon 23:00-7:00 displayed as one)
       const merged = new Map();
       for (const r of localRules) {
         const existing = merged.get(r.day);
@@ -428,7 +451,7 @@ const App = {
         }
       }
       el.innerHTML = `
-        <div class="manage-view">
+        <div class="manage">
           <h2>Bookable Hours</h2>
           <p>Set hours when bookings are allowed. Events from selected conflict calendars are automatically blocked.</p>
           <form id="avail-form" onsubmit="App.saveAvailability(event)">
@@ -460,21 +483,25 @@ const App = {
       const data = await CalendarAPI.getBookings();
       const bookings = data.bookings || [];
       el.innerHTML = `
-        <div class="manage-view">
+        <div class="manage">
           <h2>Bookings</h2>
           ${bookings.length === 0 ? '<p class="empty">No bookings yet</p>' : ''}
-          <div class="manage-list">
+          <div class="manage-items">
             ${bookings.map(b => `
               <div class="manage-item">
-                <span class="manage-name">${this.esc(b['booker-name'])}</span>
-                <span class="manage-meta">${new Date(b.start * 1000).toLocaleString()}</span>
+                <div class="manage-body">
+                  <div class="manage-name">${this.esc(b['booker-name'])}</div>
+                  <div class="manage-meta">${new Date(b.start * 1000).toLocaleString()}</div>
+                </div>
                 <span class="status-badge status-${b.status}">${b.status}</span>
-                ${b.status === 'pending' ? `
-                  <button onclick="CalendarAPI.confirmBooking('${b.id}').then(()=>App.refresh())" class="btn-sm">Confirm</button>
-                ` : ''}
-                ${b.status !== 'cancelled' ? `
-                  <button onclick="CalendarAPI.cancelBooking('${b.id}').then(()=>App.refresh())" class="btn-sm btn-danger">Cancel</button>
-                ` : ''}
+                <div class="manage-actions">
+                  ${b.status === 'pending' ? `
+                    <button onclick="CalendarAPI.confirmBooking('${b.id}').then(()=>App.refresh())" class="btn-sm">Confirm</button>
+                  ` : ''}
+                  ${b.status !== 'cancelled' ? `
+                    <button onclick="CalendarAPI.cancelBooking('${b.id}').then(()=>App.refresh())" class="btn-danger">Cancel</button>
+                  ` : ''}
+                </div>
               </div>
             `).join('')}
           </div>
@@ -487,10 +514,10 @@ const App = {
 
   async renderSettings(el) {
     el.innerHTML = `
-      <div class="manage-view">
+      <div class="manage">
         <h2>Settings</h2>
         <form id="settings-form" onsubmit="App.saveSettings(event)">
-          <div class="form-group">
+          <div class="field">
             <label>Default View</label>
             <select name="defaultView">
               <option value="month" ${this.settings['default-view'] === 'month' ? 'selected' : ''}>Month</option>
@@ -499,14 +526,14 @@ const App = {
               <option value="agenda" ${this.settings['default-view'] === 'agenda' ? 'selected' : ''}>Agenda</option>
             </select>
           </div>
-          <div class="form-group">
+          <div class="field">
             <label>Week Starts On</label>
             <select name="weekStartDay">
               <option value="0" ${this.settings['week-start-day'] === 0 ? 'selected' : ''}>Sunday</option>
               <option value="1" ${this.settings['week-start-day'] === 1 ? 'selected' : ''}>Monday</option>
             </select>
           </div>
-          <div class="form-group">
+          <div class="field">
             <label>Timezone</label>
             <input type="text" name="timezone" value="${this.settings['default-timezone'] || 'UTC'}" placeholder="UTC">
           </div>
@@ -518,14 +545,14 @@ const App = {
 
   renderImport(el) {
     el.innerHTML = `
-      <div class="manage-view">
+      <div class="manage">
         <h2>Import Calendar</h2>
         <form id="import-form" onsubmit="App.handleImport(event)">
-          <div class="form-group">
+          <div class="field">
             <label>Calendar Name</label>
             <input type="text" name="calName" placeholder="My Calendar" required>
           </div>
-          <div class="form-group">
+          <div class="field">
             <label>Select .ics File</label>
             <input type="file" name="icsFile" accept=".ics" required>
           </div>
@@ -538,13 +565,13 @@ const App = {
   renderSubscriptions(el) {
     const subs = this.subscriptions;
     el.innerHTML = `
-      <div class="manage-view">
-        <div class="manage-header">
+      <div class="manage">
+        <div class="manage-head">
           <h2>Subscriptions</h2>
-          <button onclick="App.showSubscribeCalendar()" class="btn-primary">+ Subscribe</button>
+          <button onclick="App.showSubscribeCalendar()" class="btn-primary">Subscribe</button>
         </div>
         ${subs.length === 0 ? '<p class="empty">No subscriptions yet. Subscribe to an external .ics URL to sync events.</p>' : ''}
-        <div class="manage-list">
+        <div class="manage-items">
           ${subs.map(s => {
             const cal = this.calendars.find(c => c.id === s['calendar-id']);
             const calName = cal ? this.esc(cal.name) : 'Unknown';
@@ -552,14 +579,16 @@ const App = {
             return `
             <div class="manage-item">
               ${cal ? `<span class="cal-dot" style="background:${this.hexColor(cal.color)}"></span>` : ''}
-              <div class="manage-name">
-                ${calName}
+              <div class="manage-body">
+                <div class="manage-name">${calName}</div>
                 <div class="sub-url" title="${this.esc(s.url)}">${this.esc(s.url)}</div>
               </div>
-              <span class="manage-meta">Every ${s['refresh-interval']} min &middot; ${lastFetched}</span>
+              <div class="manage-meta">Every ${s['refresh-interval']} min &middot; ${lastFetched}</div>
               ${s.error ? `<span class="sub-error" title="${this.esc(s.error)}">Error</span>` : ''}
-              <button onclick="CalendarAPI.refreshSubscription('${s.id}').then(()=>App.refresh())" class="btn-sm">Refresh</button>
-              <button onclick="App.confirmUnsubscribe('${s.id}')" class="btn-sm btn-danger">Unsubscribe</button>
+              <div class="manage-actions">
+                <button onclick="CalendarAPI.refreshSubscription('${s.id}').then(()=>App.refresh())" class="btn-sm">Refresh</button>
+                <button onclick="App.confirmUnsubscribe('${s.id}')" class="btn-danger">Unsubscribe</button>
+              </div>
             </div>`;
           }).join('')}
         </div>
@@ -577,19 +606,19 @@ const App = {
     this.showModal(`
       <h2>Subscribe to Calendar</h2>
       <form onsubmit="App.submitSubscribe(event)">
-        <div class="form-group">
+        <div class="field">
           <label>iCal URL (.ics)</label>
           <input type="url" name="url" required autofocus placeholder="https://calendar.google.com/...basic.ics">
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Calendar Name</label>
           <input type="text" name="calName" required placeholder="My Google Calendar">
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Refresh Interval (minutes)</label>
           <input type="number" name="refreshMinutes" value="60" min="5" required>
         </div>
-        <div class="form-actions">
+        <div class="dialog-actions">
           <button type="button" onclick="App.closeModal()" class="btn-sm">Cancel</button>
           <button type="submit" class="btn-primary">Subscribe</button>
         </div>
@@ -665,40 +694,40 @@ const App = {
     this.showModal(`
       <h2>Create Event</h2>
       <form onsubmit="App.submitCreateEvent(event)">
-        <div class="form-group">
+        <div class="field">
           <label>Title</label>
           <input type="text" name="title" required autofocus>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Calendar</label>
           <select name="calendarId" required>
             ${this.calendars.map(c => `<option value="${c.id}">${this.esc(c.name)}</option>`).join('')}
           </select>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Start</label>
           <input type="datetime-local" name="start" value="${this.toLocalIso(startDt)}" required>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>End</label>
           <input type="datetime-local" name="end" value="${this.toLocalIso(endDt)}" required>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label><input type="checkbox" name="allDay"> All day</label>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Location</label>
           <input type="text" name="location">
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Description</label>
           <textarea name="description" rows="3"></textarea>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label><input type="checkbox" name="recurring" onchange="document.getElementById('rrule-opts').style.display=this.checked?'':'none'"> Repeats</label>
         </div>
         <div id="rrule-opts" style="display:none">
-          <div class="form-group">
+          <div class="field">
             <label>Frequency</label>
             <select name="rruleFreq">
               <option value="daily">Daily</option>
@@ -707,13 +736,13 @@ const App = {
               <option value="yearly">Yearly</option>
             </select>
           </div>
-          <div class="form-group">
+          <div class="field">
             <label>Every</label>
             <input type="number" name="rruleInterval" value="1" min="1" max="99" style="width:60px">
             <span id="rrule-interval-label">week(s)</span>
           </div>
         </div>
-        <div class="form-actions">
+        <div class="dialog-actions">
           <button type="button" onclick="App.closeModal()" class="btn-sm">Cancel</button>
           <button type="submit" class="btn-primary">Create</button>
         </div>
@@ -752,36 +781,36 @@ const App = {
       this.showModal(`
         <h2>Edit Event</h2>
         <form onsubmit="App.submitEditEvent(event, '${eventId}')">
-          <div class="form-group">
+          <div class="field">
             <label>Title</label>
             <input type="text" name="title" value="${this.esc(ev.title)}" required>
           </div>
-          <div class="form-group">
+          <div class="field">
             <label>Calendar</label>
             <select name="calendarId" required>
               ${this.calendars.map(c => `<option value="${c.id}" ${c.id === ev['calendar-id'] ? 'selected' : ''}>${this.esc(c.name)}</option>`).join('')}
             </select>
           </div>
-          <div class="form-group">
+          <div class="field">
             <label>Start</label>
             <input type="datetime-local" name="start" value="${this.toLocalIso(startDt)}" required>
           </div>
-          <div class="form-group">
+          <div class="field">
             <label>End</label>
             <input type="datetime-local" name="end" value="${this.toLocalIso(endDt)}" required>
           </div>
-          <div class="form-group">
+          <div class="field">
             <label><input type="checkbox" name="allDay" ${ev['all-day'] ? 'checked' : ''}> All day</label>
           </div>
-          <div class="form-group">
+          <div class="field">
             <label>Location</label>
             <input type="text" name="location" value="${this.esc(ev.location || '')}">
           </div>
-          <div class="form-group">
+          <div class="field">
             <label>Description</label>
             <textarea name="description" rows="3">${this.esc(ev.description || '')}</textarea>
           </div>
-          <div class="form-actions">
+          <div class="dialog-actions">
             <button type="button" onclick="App.closeModal()" class="btn-sm">Cancel</button>
             <button type="submit" class="btn-primary">Save</button>
           </div>
@@ -818,19 +847,19 @@ const App = {
     this.showModal(`
       <h2>Create Calendar</h2>
       <form onsubmit="App.submitCreateCalendar(event)">
-        <div class="form-group">
+        <div class="field">
           <label>Name</label>
           <input type="text" name="name" required autofocus>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Color</label>
-          <input type="color" name="color" value="#398be2">
+          <input type="color" name="color" value="#d4600a">
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Description</label>
           <textarea name="description" rows="2"></textarea>
         </div>
-        <div class="form-actions">
+        <div class="dialog-actions">
           <button type="button" onclick="App.closeModal()" class="btn-sm">Cancel</button>
           <button type="submit" class="btn-primary">Create</button>
         </div>
@@ -852,19 +881,19 @@ const App = {
     this.showModal(`
       <h2>Edit Calendar</h2>
       <form onsubmit="App.submitEditCalendar(event, '${id}')">
-        <div class="form-group">
+        <div class="field">
           <label>Name</label>
           <input type="text" name="name" value="${this.esc(cal.name)}" required>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Color</label>
           <input type="color" name="color" value="${this.hexColor(cal.color)}">
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Description</label>
           <textarea name="description" rows="2">${this.esc(cal.description || '')}</textarea>
         </div>
-        <div class="form-actions">
+        <div class="dialog-actions">
           <button type="button" onclick="App.closeModal()" class="btn-sm">Cancel</button>
           <button type="submit" class="btn-primary">Save</button>
         </div>
@@ -903,25 +932,25 @@ const App = {
     this.showModal(`
       <h2>Create Booking Type</h2>
       <form onsubmit="App.submitCreateBookingType(event)">
-        <div class="form-group">
+        <div class="field">
           <label>Name</label>
           <input type="text" name="name" required autofocus placeholder="30 Minute Meeting">
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Duration (minutes)</label>
           <input type="number" name="duration" value="30" min="5" required>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Buffer Time (minutes)</label>
           <input type="number" name="bufferTime" value="15" min="0">
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Calendar</label>
           <select name="calendarId" required>
             ${this.calendars.map(c => `<option value="${c.id}">${this.esc(c.name)}</option>`).join('')}
           </select>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Check conflicts against</label>
           <div class="checkbox-group">
             ${this.calendars.map(c => `
@@ -930,18 +959,18 @@ const App = {
           </div>
           <small>If none selected, all calendars are checked</small>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Color</label>
           <input type="color" name="color" value="#e056a0">
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Description</label>
           <textarea name="description" rows="2"></textarea>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label><input type="checkbox" name="active" checked> Active</label>
         </div>
-        <div class="form-actions">
+        <div class="dialog-actions">
           <button type="button" onclick="App.closeModal()" class="btn-sm">Cancel</button>
           <button type="submit" class="btn-primary">Create</button>
         </div>
@@ -973,25 +1002,25 @@ const App = {
     this.showModal(`
       <h2>Edit Booking Type</h2>
       <form onsubmit="App.submitEditBookingType(event, '${id}')">
-        <div class="form-group">
+        <div class="field">
           <label>Name</label>
           <input type="text" name="name" value="${this.esc(bt.name)}" required autofocus>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Duration (minutes)</label>
           <input type="number" name="duration" value="${bt.duration}" min="5" required>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Buffer Time (minutes)</label>
           <input type="number" name="bufferTime" value="${bt['buffer-time'] || 0}" min="0">
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Calendar</label>
           <select name="calendarId" required>
             ${this.calendars.map(c => `<option value="${c.id}" ${c.id === bt['calendar-id'] ? 'selected' : ''}>${this.esc(c.name)}</option>`).join('')}
           </select>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Check conflicts against</label>
           <div class="checkbox-group">
             ${this.calendars.map(c => `
@@ -1000,18 +1029,18 @@ const App = {
           </div>
           <small>If none selected, all calendars are checked</small>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Color</label>
           <input type="color" name="color" value="${this.hexColor(bt.color)}">
         </div>
-        <div class="form-group">
+        <div class="field">
           <label>Description</label>
           <textarea name="description" rows="2">${this.esc(bt.description || '')}</textarea>
         </div>
-        <div class="form-group">
+        <div class="field">
           <label><input type="checkbox" name="active" ${bt.active ? 'checked' : ''}> Active</label>
         </div>
-        <div class="form-actions">
+        <div class="dialog-actions">
           <button type="button" onclick="App.closeModal()" class="btn-sm">Cancel</button>
           <button type="submit" class="btn-primary">Save</button>
         </div>
@@ -1046,7 +1075,7 @@ const App = {
     e.preventDefault();
     const f = e.target;
     const rules = [];
-    const offset = new Date().getTimezoneOffset(); // minutes to add for UTC
+    const offset = new Date().getTimezoneOffset();
     for (let i = 0; i < 7; i++) {
       if (f[`day-${i}`].checked) {
         const [sh, sm] = f[`start-${i}`].value.split(':').map(Number);
@@ -1054,12 +1083,10 @@ const App = {
         let startUtc = sh * 60 + sm + offset;
         let endUtc = eh * 60 + em + offset;
         let day = i;
-        // Handle day-of-week wrap when offset shifts past midnight
         if (startUtc < 0) { startUtc += 1440; day = (day + 6) % 7; }
         if (startUtc >= 1440) { startUtc -= 1440; day = (day + 1) % 7; }
         if (endUtc < 0) { endUtc += 1440; }
         if (endUtc >= 1440) { endUtc -= 1440; }
-        // If start and end land on different UTC days, split into two rules
         if (endUtc <= startUtc) {
           rules.push({ day: day, start: startUtc, end: 1440 });
           rules.push({ day: (day + 1) % 7, start: 0, end: endUtc });
@@ -1104,7 +1131,7 @@ const App = {
       overlay.onclick = (e) => { if (e.target === overlay) this.closeModal(); };
       document.body.appendChild(overlay);
     }
-    overlay.innerHTML = `<div class="modal">${content}</div>`;
+    overlay.innerHTML = `<div class="dialog">${content}</div>`;
     overlay.style.display = 'flex';
   },
 
@@ -1144,7 +1171,7 @@ const App = {
   },
 
   hexColor(urbitHex) {
-    if (!urbitHex) return '#398be2';
+    if (!urbitHex) return '#d4600a';
     const clean = urbitHex.replace(/^0x\.?/, '').replace(/\./g, '');
     return '#' + clean.padStart(6, '0');
   },

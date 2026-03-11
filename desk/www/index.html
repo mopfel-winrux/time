@@ -1,16 +1,26 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Calendar</title>
+  <title>Time</title>
+  <script>
+    (function() {
+      var t = localStorage.getItem('time-theme');
+      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <link rel="preload" href="/apps/time/fonts/inter-regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/apps/time/fonts/inter-medium.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/apps/time/fonts/inter-semibold.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/apps/time/css/app.css">
   <link rel="manifest" href="/apps/time/manifest.json">
 </head>
 <body>
   <div id="app">
-    <div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#8899aa">
-      Loading...
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;color:var(--text-muted,#9b9590)">
+      Loading…
     </div>
   </div>
   <script src="/apps/time/js/api.js"></script>
