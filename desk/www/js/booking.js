@@ -364,6 +364,11 @@ const BookingPage = {
     const notes = f.notes.value || '';
     try {
       await CalendarAPI.bookSlot(btId, bookerName, bookerEmail, startUnix, notes);
+      // Invalidate cached slots for the booked day
+      const dayStart = new Date(startUnix * 1000);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayCacheKey = `${btId}-${Math.floor(dayStart.getTime() / 1000)}`;
+      delete this.slotCache[dayCacheKey];
       const panel = document.getElementById('booking-form-panel');
       const container = document.getElementById('booking-cal-view');
       if (container) container.innerHTML = '';
@@ -373,6 +378,10 @@ const BookingPage = {
             <h3>Booking Confirmed!</h3>
             <p>You're all set. A meeting has been scheduled for ${new Date(startUnix * 1000).toLocaleString()}.</p>
             <p>Thank you, ${App.esc(bookerName)}!</p>
+            <div class="booking-confirmed-links">
+              <a href="#/book/${btId}" class="btn-primary">Book Another</a>
+              <a href="#/book/" class="btn-sm">Back to Booking Types</a>
+            </div>
           </div>
         `;
       }

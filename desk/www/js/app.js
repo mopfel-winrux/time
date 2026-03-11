@@ -376,7 +376,7 @@ const App = {
               <input type="checkbox" ${pageData.enabled ? 'checked' : ''} onchange="CalendarAPI.toggleBookingPage().then(()=>App.refresh())">
               Public booking page ${pageData.enabled ? 'enabled' : 'disabled'}
             </label>
-            ${pageData.enabled ? `<div class="booking-url">Share: <code>${location.origin}/apps/time/#/book/[type-id]</code></div>` : ''}
+            ${pageData.enabled ? `<div class="booking-url">Booking page: <code>${location.origin}/apps/time/#/book/</code></div>` : ''}
           </div>
           <div class="manage-list">
             ${types.map(bt => `
@@ -400,15 +400,40 @@ const App = {
   async renderAvailability(el) {
     try {
       const data = await CalendarAPI.getAvailability();
-      const rules = data.rules || [];
+      const utcRules = data.rules || [];
       const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      // Convert UTC rules to local time for display
+      const offset = new Date().getTimezoneOffset(); // minutes to subtract for local
+      const localRules = [];
+      for (const rule of utcRules) {
+        let startLocal = rule.start - offset;
+        let endLocal = rule.end - offset;
+        let localDay = rule.day;
+        if (startLocal < 0) { startLocal += 1440; localDay = (localDay + 6) % 7; }
+        if (startLocal >= 1440) { startLocal -= 1440; localDay = (localDay + 1) % 7; }
+        if (endLocal < 0) { endLocal += 1440; }
+        if (endLocal >= 1440) { endLocal -= 1440; }
+        localRules.push({ day: localDay, start: startLocal, end: endLocal });
+      }
+      // Merge split rules back: if two rules on adjacent days form a contiguous block, merge
+      // (e.g. Mon 23:00-24:00 + Tue 0:00-7:00 => Mon 23:00-7:00 displayed as one)
+      const merged = new Map();
+      for (const r of localRules) {
+        const existing = merged.get(r.day);
+        if (existing) {
+          existing.start = Math.min(existing.start, r.start);
+          existing.end = Math.max(existing.end, r.end);
+        } else {
+          merged.set(r.day, { ...r });
+        }
+      }
       el.innerHTML = `
         <div class="manage-view">
           <h2>Bookable Hours</h2>
-          <p>Set hours when bookings are allowed. Defaults to Mon–Fri 9am–5pm. Events from selected conflict calendars are automatically blocked.</p>
+          <p>Set hours when bookings are allowed. Events from selected conflict calendars are automatically blocked.</p>
           <form id="avail-form" onsubmit="App.saveAvailability(event)">
             ${days.map((d, i) => {
-              const rule = rules.find(r => r.day === i);
+              const rule = merged.get(i);
               return `
                 <div class="avail-row">
                   <label class="avail-day">
@@ -442,7 +467,8 @@ const App = {
             ${bookings.map(b => `
               <div class="manage-item">
                 <span class="manage-name">${this.esc(b['booker-name'])}</span>
-                <span class="manage-meta">${new Date(b.start * 1000).toLocaleString()} - ${b.status}</span>
+                <span class="manage-meta">${new Date(b.start * 1000).toLocaleString()}</span>
+                <span class="status-badge status-${b.status}">${b.status}</span>
                 ${b.status === 'pending' ? `
                   <button onclick="CalendarAPI.confirmBooking('${b.id}').then(()=>App.refresh())" class="btn-sm">Confirm</button>
                 ` : ''}
@@ -668,6 +694,25 @@ const App = {
           <label>Description</label>
           <textarea name="description" rows="3"></textarea>
         </div>
+        <div class="form-group">
+          <label><input type="checkbox" name="recurring" onchange="document.getElementById('rrule-opts').style.display=this.checked?'':'none'"> Repeats</label>
+        </div>
+        <div id="rrule-opts" style="display:none">
+          <div class="form-group">
+            <label>Frequency</label>
+            <select name="rruleFreq">
+              <option value="daily">Daily</option>
+              <option value="weekly" selected>Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Every</label>
+            <input type="number" name="rruleInterval" value="1" min="1" max="99" style="width:60px">
+            <span id="rrule-interval-label">week(s)</span>
+          </div>
+        </div>
         <div class="form-actions">
           <button type="button" onclick="App.closeModal()" class="btn-sm">Cancel</button>
           <button type="submit" class="btn-primary">Create</button>
@@ -681,7 +726,7 @@ const App = {
     const f = e.target;
     const start = Math.floor(new Date(f.start.value).getTime() / 1000);
     const end = Math.floor(new Date(f.end.value).getTime() / 1000);
-    await CalendarAPI.createEvent({
+    const ev = {
       title: f.title.value,
       description: f.description.value || '',
       'calendar-id': f.calendarId.value,
@@ -689,7 +734,14 @@ const App = {
       location: f.location.value || '',
       'all-day': f.allDay.checked,
       reminders: []
-    });
+    };
+    if (f.recurring.checked) {
+      ev.rrule = {
+        freq: f.rruleFreq.value,
+        interval: parseInt(f.rruleInterval.value) || 1
+      };
+    }
+    await CalendarAPI.createEvent(ev);
     this.closeModal();
   },
 
@@ -914,7 +966,75 @@ const App = {
     this.closeModal();
   },
 
-  editBookingType(id) { /* similar to create, pre-filled */ },
+  async editBookingType(id) {
+    const data = await CalendarAPI.getBookingTypes();
+    const bt = (data['booking-types'] || []).find(t => t.id === id);
+    if (!bt) return;
+    this.showModal(`
+      <h2>Edit Booking Type</h2>
+      <form onsubmit="App.submitEditBookingType(event, '${id}')">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" name="name" value="${this.esc(bt.name)}" required autofocus>
+        </div>
+        <div class="form-group">
+          <label>Duration (minutes)</label>
+          <input type="number" name="duration" value="${bt.duration}" min="5" required>
+        </div>
+        <div class="form-group">
+          <label>Buffer Time (minutes)</label>
+          <input type="number" name="bufferTime" value="${bt['buffer-time'] || 0}" min="0">
+        </div>
+        <div class="form-group">
+          <label>Calendar</label>
+          <select name="calendarId" required>
+            ${this.calendars.map(c => `<option value="${c.id}" ${c.id === bt['calendar-id'] ? 'selected' : ''}>${this.esc(c.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Check conflicts against</label>
+          <div class="checkbox-group">
+            ${this.calendars.map(c => `
+              <label><input type="checkbox" name="conflictCal" value="${c.id}" ${(bt['conflict-calendars'] || []).includes(c.id) ? 'checked' : ''}> ${this.esc(c.name)}</label>
+            `).join('')}
+          </div>
+          <small>If none selected, all calendars are checked</small>
+        </div>
+        <div class="form-group">
+          <label>Color</label>
+          <input type="color" name="color" value="${this.hexColor(bt.color)}">
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea name="description" rows="2">${this.esc(bt.description || '')}</textarea>
+        </div>
+        <div class="form-group">
+          <label><input type="checkbox" name="active" ${bt.active ? 'checked' : ''}> Active</label>
+        </div>
+        <div class="form-actions">
+          <button type="button" onclick="App.closeModal()" class="btn-sm">Cancel</button>
+          <button type="submit" class="btn-primary">Save</button>
+        </div>
+      </form>
+    `);
+  },
+
+  async submitEditBookingType(e, id) {
+    e.preventDefault();
+    const f = e.target;
+    const conflictCals = Array.from(f.querySelectorAll('input[name="conflictCal"]:checked')).map(cb => cb.value);
+    await CalendarAPI.updateBookingType(id, {
+      name: f.name.value,
+      duration: parseInt(f.duration.value),
+      description: f.description.value || '',
+      color: this.toUrbitHex(f.color.value),
+      'calendar-id': f.calendarId.value,
+      'buffer-time': parseInt(f.bufferTime.value) || 0,
+      active: f.active.checked,
+      'conflict-calendars': conflictCals
+    });
+    this.closeModal();
+  },
 
   async deleteBookingType(id) {
     if (confirm('Delete this booking type?')) {
@@ -926,11 +1046,26 @@ const App = {
     e.preventDefault();
     const f = e.target;
     const rules = [];
+    const offset = new Date().getTimezoneOffset(); // minutes to add for UTC
     for (let i = 0; i < 7; i++) {
       if (f[`day-${i}`].checked) {
         const [sh, sm] = f[`start-${i}`].value.split(':').map(Number);
         const [eh, em] = f[`end-${i}`].value.split(':').map(Number);
-        rules.push({ day: i, start: sh * 60 + sm, end: eh * 60 + em });
+        let startUtc = sh * 60 + sm + offset;
+        let endUtc = eh * 60 + em + offset;
+        let day = i;
+        // Handle day-of-week wrap when offset shifts past midnight
+        if (startUtc < 0) { startUtc += 1440; day = (day + 6) % 7; }
+        if (startUtc >= 1440) { startUtc -= 1440; day = (day + 1) % 7; }
+        if (endUtc < 0) { endUtc += 1440; }
+        if (endUtc >= 1440) { endUtc -= 1440; }
+        // If start and end land on different UTC days, split into two rules
+        if (endUtc <= startUtc) {
+          rules.push({ day: day, start: startUtc, end: 1440 });
+          rules.push({ day: (day + 1) % 7, start: 0, end: endUtc });
+        } else {
+          rules.push({ day: day, start: startUtc, end: endUtc });
+        }
       }
     }
     await CalendarAPI.setAvailability(rules);
