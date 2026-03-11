@@ -1,0 +1,9 @@
+:~  title+'Time'
+    info+'A calendar and scheduling app for Urbit'
+    color+0x39.8be2
+    version+[0 1 0]
+    website+'https://github.com/amadeo/calendar'
+    license+'MIT'
+    base+'time'
+    site+/apps/time
+==
