@@ -191,9 +191,10 @@ const App = {
           ${dayEvents.slice(0, 3).map(e => {
             const cal = this.calendars.find(c => c.id === e['calendar-id']);
             const color = cal ? this.hexColor(cal.color) : '#d4600a';
+            const time = e['all-day'] ? '' : `<span class="month-event-time">${this.formatTime(e.start)}</span> `;
             return `<a href="#/event/${e.id}" class="month-event" onclick="event.stopPropagation()">
                       <span class="month-event-dot" style="background:${color}"></span>
-                      ${this.esc(e.title)}</a>`;
+                      ${time}${this.esc(e.title)}</a>`;
           }).join('')}
           ${dayEvents.length > 3 ? `<div class="month-overflow">+${dayEvents.length - 3} more</div>` : ''}
         </div>
