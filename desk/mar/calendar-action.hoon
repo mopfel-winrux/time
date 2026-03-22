@@ -107,6 +107,23 @@
     ::
         %'refresh-subscription'
       [%refresh-subscription ((ot ~[subscription-id+(se %uv)]) jon)]
+    ::
+        %'toggle-public'
+      [%toggle-public ((ot ~[calendar-id+(se %uv)]) jon)]
+    ::
+        %'subscribe-contact-calendar'
+      =/  f  (ot ~[ship+(se %p) calendar-id+(se %uv)])
+      =/  [s=@p cid=@uv]  (f jon)
+      [%subscribe-contact-calendar s cid]
+    ::
+        %'unsubscribe-contact-calendar'
+      [%unsubscribe-contact-calendar ((ot ~[contact-calendar-id+(se %uv)]) jon)]
+    ::
+        %'toggle-contact-calendar'
+      [%toggle-contact-calendar ((ot ~[contact-calendar-id+(se %uv)]) jon)]
+    ::
+        %'discover-contact-calendars'
+      [%discover-contact-calendars ((ot ~[ship+(se %p)]) jon)]
     ==
   ::
   ++  parse-event

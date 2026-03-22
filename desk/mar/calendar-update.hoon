@@ -92,6 +92,56 @@
           ['last-fetched' (sect last-fetched.upd)]
           ['error' ?~(error.upd ~ s+u.error.upd)]
       ==
+    ::
+        %calendar-publicity-changed
+      %-  pairs
+      :~  ['type' s+'calendar-publicity-changed']
+          ['calendar-id' s+(scot %uv calendar-id.upd)]
+          ['public' b+public.upd]
+      ==
+    ::
+        %contact-calendar-added
+      %-  pairs
+      :~  ['type' s+'contact-calendar-added']
+          ['contact-calendar-id' s+(scot %uv contact-calendar-id.upd)]
+          ['contact-calendar' (contact-calendar-to-json contact-calendar.upd)]
+      ==
+    ::
+        %contact-calendar-removed
+      %-  pairs
+      :~  ['type' s+'contact-calendar-removed']
+          ['contact-calendar-id' s+(scot %uv contact-calendar-id.upd)]
+      ==
+    ::
+        %contact-calendar-updated
+      %-  pairs
+      :~  ['type' s+'contact-calendar-updated']
+          ['contact-calendar-id' s+(scot %uv contact-calendar-id.upd)]
+          ['contact-calendar' (contact-calendar-to-json contact-calendar.upd)]
+      ==
+    ::
+        %contact-calendar-toggled
+      %-  pairs
+      :~  ['type' s+'contact-calendar-toggled']
+          ['contact-calendar-id' s+(scot %uv contact-calendar-id.upd)]
+          ['enabled' b+enabled.upd]
+      ==
+    ::
+        %discovered-calendars
+      %-  pairs
+      :~  ['type' s+'discovered-calendars']
+          ['ship' s+(scot %p ship.upd)]
+          :-  'calendars'
+          :-  %a
+          %+  turn  calendars.upd
+          |=  [cid=calendar-id:calendar cal=calendar:calendar]
+          %-  pairs
+          :~  ['calendar-id' s+(scot %uv cid)]
+              ['name' s+name.cal]
+              ['color' s+(scot %ux color.cal)]
+              ['description' s+description.cal]
+          ==
+      ==
     ==
   --
 ++  grab
@@ -108,6 +158,7 @@
   :~  ['name' s+name.cal]
       ['color' s+(scot %ux color.cal)]
       ['description' s+description.cal]
+      ['public' b+public.cal]
   ==
 ::
 ++  event-to-json
@@ -157,6 +208,20 @@
       ['refresh-interval' (numb (div refresh-interval.sub ~m1))]
       ['last-fetched' (sect last-fetched.sub)]
       ['error' ?~(error.sub ~ s+u.error.sub)]
+  ==
+::
+++  contact-calendar-to-json
+  |=  cc=contact-calendar:calendar
+  ^-  json
+  =,  enjs:format
+  %-  pairs
+  :~  ['ship' s+(scot %p ship.cc)]
+      ['calendar-id' s+(scot %uv calendar-id.cc)]
+      ['name' s+name.calendar.cc]
+      ['color' s+(scot %ux color.calendar.cc)]
+      ['description' s+description.calendar.cc]
+      ['enabled' b+enabled.cc]
+      ['last-updated' (sect last-updated.cc)]
   ==
 ::
 ++  settings-to-pairs
