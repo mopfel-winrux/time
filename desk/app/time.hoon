@@ -64,7 +64,15 @@
     ['UTC' 0 'month' ~]
   =/  default-page=booking-page:calendar
     [| 'Book a Meeting' 'Schedule time with me']
-  :_  this(settings default-settings, booking-page default-page)
+  ::  create a default calendar so users can start creating events immediately
+  =/  cid=calendar-id:calendar  (sham (mix 'My Calendar' eny.bowl))
+  =/  cal=calendar:calendar  ['My Calendar' 0x39.8be2 '']
+  :_  %=  this
+        settings       default-settings
+        booking-page   default-page
+        calendars      (~(put by *(map calendar-id:calendar calendar:calendar)) cid cal)
+        calendar-order  ~[cid]
+      ==
   :~  ::  authenticated API
       :*  %pass  /eyre/connect
           %arvo  %e  %connect

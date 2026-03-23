@@ -200,7 +200,7 @@ a:hover { text-decoration: underline; }
 
 ::selection { background: var(--accent-subtle); }
 
-.week-time, .week-event-time, .day-event-time, .agenda-time,
+.week-time, .week-event-time, .day-event-time, .agenda-time, .month-event-time,
 .bgrid-time, .bgrid-slot, .slot-btn, .manage-meta {
   font-variant-numeric: tabular-nums;
 }
@@ -483,6 +483,8 @@ a:hover { text-decoration: underline; }
   display: inline-block;
   flex-shrink: 0;
 }
+
+.month-event-time { opacity: 0.7; flex-shrink: 0; }
 
 .month-overflow {
   font-size: var(--text-xs);
