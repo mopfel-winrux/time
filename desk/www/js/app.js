@@ -7,6 +7,7 @@ const App = {
   events: [],
   settings: {},
   subscriptions: [],
+  contactCalendars: [],
   selectedCalendars: new Set(),
 
   async init() {
@@ -33,15 +34,20 @@ const App = {
 
   async loadData() {
     try {
-      const [calData, settingsData, subData] = await Promise.all([
+      const [calData, settingsData, subData, ccData] = await Promise.all([
         CalendarAPI.getCalendars(),
         CalendarAPI.getSettings(),
-        CalendarAPI.getSubscriptions()
+        CalendarAPI.getSubscriptions(),
+        CalendarAPI.getContactCalendars()
       ]);
       this.calendars = calData.calendars || [];
       this.settings = settingsData;
       this.subscriptions = subData.subscriptions || [];
-      this.selectedCalendars = new Set(this.calendars.map(c => c.id));
+      this.contactCalendars = (ccData['contact-calendars'] || []);
+      this.selectedCalendars = new Set([
+        ...this.calendars.map(c => c.id),
+        ...this.contactCalendars.filter(cc => cc.enabled).map(cc => cc.id)
+      ]);
     } catch (e) {
       console.error('Failed to load data:', e);
     }
@@ -87,6 +93,7 @@ const App = {
       case 'settings': this.renderSettings(content); break;
       case 'import': this.renderImport(content); break;
       case 'subscriptions': this.renderSubscriptions(content); break;
+      case 'contact-calendars': this.renderContactCalendars(content); break;
       default: this.renderMonth(content);
     }
   },
@@ -128,6 +135,7 @@ const App = {
       { id: 'bookings', label: 'Bookings' },
       { id: 'import', label: 'Import' },
       { id: 'subscriptions', label: 'Subscriptions' },
+      { id: 'contact-calendars', label: 'Contact Calendars' },
       { id: 'settings', label: 'Settings' }
     ];
     return `
@@ -151,6 +159,21 @@ const App = {
             </label>`;
           }).join('')}
         </div>
+        ${this.contactCalendars.length > 0 ? `
+        <div class="sidebar-calendars">
+          <span class="sidebar-label">Contact Calendars</span>
+          ${this.contactCalendars.map(cc => {
+            const label = cc['display-name'] || cc.ship;
+            return `
+            <label class="cal-toggle">
+              <input type="checkbox" ${cc.enabled ? 'checked' : ''}
+                onchange="App.toggleContactCal('${cc.id}')">
+              <span class="cal-dot" style="background:${this.hexColor(cc.color)}"></span>
+              ${this.esc(label)}: ${this.esc(cc.name)}
+            </label>`;
+          }).join('')}
+        </div>
+        ` : ''}
       </aside>
     `;
   },
@@ -189,7 +212,7 @@ const App = {
              onclick="App.showCreateEventAt(${dayStart})">
           <div class="month-date">${date.getDate()}</div>
           ${dayEvents.slice(0, 3).map(e => {
-            const cal = this.calendars.find(c => c.id === e['calendar-id']);
+            const cal = this.findCalForEvent(e);
             const color = cal ? this.hexColor(cal.color) : '#d4600a';
             const time = e['all-day'] ? '' : `<span class="month-event-time">${this.formatTime(e.start)}</span> `;
             return `<a href="#/event/${e.id}" class="month-event" onclick="event.stopPropagation()">
@@ -245,7 +268,7 @@ const App = {
         const eEnd = Math.min(e.end, dayEnd);
         const top = ((eStart - dayStart) / 3600) * 60;
         const height = Math.max(((eEnd - eStart) / 3600) * 60, 20);
-        const cal = this.calendars.find(c => c.id === e['calendar-id']);
+        const cal = this.findCalForEvent(e);
         const color = cal ? this.hexColor(cal.color) : '#d4600a';
         html += `<a href="#/event/${e.id}" class="week-event" style="top:${top}px;height:${height}px;--event-color:${color}"
                     onclick="event.stopPropagation()">
@@ -279,7 +302,7 @@ const App = {
       const eEnd = Math.min(e.end, dayEnd);
       const top = ((eStart - dayStart) / 3600) * 60;
       const height = Math.max(((eEnd - eStart) / 3600) * 60, 20);
-      const cal = this.calendars.find(c => c.id === e['calendar-id']);
+      const cal = this.findCalForEvent(e);
       const color = cal ? this.hexColor(cal.color) : '#d4600a';
       html += `<a href="#/event/${e.id}" class="day-event" style="top:${top}px;height:${height}px;--event-color:${color}"
                   onclick="event.stopPropagation()">
@@ -307,7 +330,7 @@ const App = {
         html += `<div class="agenda-date">${d}</div>`;
         lastDate = d;
       }
-      const cal = this.calendars.find(c => c.id === e['calendar-id']);
+      const cal = this.findCalForEvent(e);
       const color = cal ? this.hexColor(cal.color) : '#d4600a';
       html += `
         <a href="#/event/${e.id}" class="agenda-event">
@@ -341,6 +364,11 @@ const App = {
                 <div class="manage-meta">${c['event-count'] || 0} events</div>
               </div>
               <div class="manage-actions">
+                <label class="public-toggle" title="Make visible to contacts">
+                  <input type="checkbox" ${c.public ? 'checked' : ''}
+                    onchange="CalendarAPI.togglePublic('${c.id}').then(()=>App.refresh())">
+                  Public
+                </label>
                 <button onclick="App.editCalendar('${c.id}')" class="btn-sm">Edit</button>
                 <button onclick="App.deleteCalendar('${c.id}')" class="btn-danger">Delete</button>
                 <button onclick="App.exportCalendar('${c.id}')" class="btn-sm">Export .ics</button>
@@ -356,15 +384,15 @@ const App = {
     if (!eventId) { el.innerHTML = '<p>Event not found</p>'; return; }
     try {
       const data = await CalendarAPI.getEvent(eventId);
-      const cal = this.calendars.find(c => c.id === data['calendar-id']);
+      const cal = this.findCalForEvent(data);
       el.innerHTML = `
         <article class="event-detail">
           <div class="event-header">
             <h2>${this.esc(data.title)}</h2>
-            <div class="event-actions">
+            ${data['read-only'] ? '' : `<div class="event-actions">
               <button onclick="App.editEvent('${eventId}')" class="btn-primary">Edit</button>
               <button onclick="App.confirmDeleteEvent('${eventId}')" class="btn-danger">Delete</button>
-            </div>
+            </div>`}
           </div>
           <div class="event-meta">
             <dl>
@@ -597,6 +625,85 @@ const App = {
     `;
   },
 
+  async renderContactCalendars(el) {
+    const ccData = await CalendarAPI.getContactCalendars();
+    this.contactCalendars = (ccData['contact-calendars'] || []);
+    const ccs = this.contactCalendars;
+    let contactsHtml = '';
+    try {
+      const data = await CalendarAPI.getContacts();
+      const contacts = data.contacts || [];
+      contactsHtml = contacts.length === 0
+        ? '<p class="empty">No contacts found. Add contacts in the Groups app to discover their public calendars.</p>'
+        : `<div class="manage-items">
+            ${contacts.map(c => `
+              <div class="manage-item">
+                <div class="manage-body">
+                  <div class="manage-name">${this.esc(c['display-name'] || c.ship)}</div>
+                  <div class="manage-meta">${this.esc(c.ship)}</div>
+                </div>
+                <div class="manage-actions">
+                  <button onclick="App.discoverCalendars('${c.ship}')" class="btn-sm">Discover Calendars</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>`;
+    } catch (e) {
+      contactsHtml = '<p class="empty">Could not load contacts. Is the Groups app installed?</p>';
+    }
+    el.innerHTML = `
+      <div class="manage">
+        <div class="manage-head">
+          <h2>Contact Calendars</h2>
+        </div>
+        ${ccs.length > 0 ? `
+        <div class="manage-items">
+          ${ccs.map(cc => {
+            const label = cc['display-name'] || cc.ship;
+            const lastUp = cc['last-updated'] ? new Date(cc['last-updated'] * 1000).toLocaleString() : 'Never';
+            const evCount = (cc.events || []).length;
+            return `
+            <div class="manage-item">
+              <span class="cal-dot" style="background:${this.hexColor(cc.color)}"></span>
+              <div class="manage-body">
+                <div class="manage-name">${this.esc(label)}: ${this.esc(cc.name)}</div>
+                <div class="manage-meta">${evCount} events &middot; Updated: ${lastUp}</div>
+              </div>
+              <div class="manage-actions">
+                <button onclick="App.confirmUnsubscribeContact('${cc.id}')" class="btn-danger">Unsubscribe</button>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+        ` : '<p class="empty">No contact calendars subscribed yet.</p>'}
+        <h3 style="margin-top:1.5rem">Discover from Contacts</h3>
+        ${contactsHtml}
+      </div>
+    `;
+  },
+
+  async discoverCalendars(ship) {
+    try {
+      await CalendarAPI.discoverContactCalendars(ship);
+      this.showModal(`
+        <h2>Discovering Calendars</h2>
+        <p>Requesting public calendars from ${this.esc(ship)}...</p>
+        <p>Check back in a moment and refresh this page.</p>
+        <div class="dialog-actions">
+          <button type="button" onclick="App.closeModal();App.refresh();" class="btn-primary">OK</button>
+        </div>
+      `);
+    } catch (e) {
+      alert('Failed to discover calendars: ' + e.message);
+    }
+  },
+
+  confirmUnsubscribeContact(ccId) {
+    if (confirm('Unsubscribe from this contact calendar?')) {
+      CalendarAPI.unsubscribeContactCalendar(ccId).then(() => this.refresh());
+    }
+  },
+
   confirmUnsubscribe(subId) {
     if (confirm('Unsubscribe from this calendar? The calendar and its events will remain.')) {
       CalendarAPI.unsubscribeCalendar(subId).then(() => this.refresh());
@@ -643,7 +750,16 @@ const App = {
     const end = Math.floor(new Date(d.getFullYear(), d.getMonth() + 2, 0).getTime() / 1000);
     try {
       const data = await CalendarAPI.getEvents(start, end);
-      return (data.events || []).filter(e => this.selectedCalendars.has(e['calendar-id']));
+      let allEvents = (data.events || []).filter(e => this.selectedCalendars.has(e['calendar-id']));
+      // merge in enabled contact calendar events
+      for (const cc of this.contactCalendars) {
+        if (!cc.enabled || !cc.events) continue;
+        const ccEvents = cc.events
+          .filter(e => e.start < end && e.end > start)
+          .map(e => ({ ...e, 'calendar-id': cc.id, _contactCal: true, _readOnly: true }));
+        allEvents = allEvents.concat(ccEvents);
+      }
+      return allEvents;
     } catch (e) {
       console.error('Failed to load events:', e);
       return [];
@@ -679,6 +795,15 @@ const App = {
     if (this.selectedCalendars.has(id)) this.selectedCalendars.delete(id);
     else this.selectedCalendars.add(id);
     this.route();
+  },
+
+  async toggleContactCal(ccId) {
+    await CalendarAPI.toggleContactCalendar(ccId);
+  },
+
+  findCalForEvent(e) {
+    return this.calendars.find(c => c.id === e['calendar-id'])
+      || this.contactCalendars.find(cc => cc.id === e['calendar-id']);
   },
 
   // Dialogs

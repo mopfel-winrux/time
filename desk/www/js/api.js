@@ -190,6 +190,40 @@ const CalendarAPI = {
     });
   },
 
+  // Contact calendar operations
+  getContactCalendars() { return this.get('contact-calendars'); },
+  getContacts() { return this.get('contacts'); },
+
+  togglePublic(calendarId) {
+    return this.poke({ action: 'toggle-public', 'calendar-id': calendarId });
+  },
+
+  discoverContactCalendars(ship) {
+    return this.poke({ action: 'discover-contact-calendars', ship });
+  },
+
+  subscribeContactCalendar(ship, calendarId) {
+    return this.poke({
+      action: 'subscribe-contact-calendar',
+      ship,
+      'calendar-id': calendarId
+    });
+  },
+
+  unsubscribeContactCalendar(contactCalendarId) {
+    return this.poke({
+      action: 'unsubscribe-contact-calendar',
+      'contact-calendar-id': contactCalendarId
+    });
+  },
+
+  toggleContactCalendar(contactCalendarId) {
+    return this.poke({
+      action: 'toggle-contact-calendar',
+      'contact-calendar-id': contactCalendarId
+    });
+  },
+
   // Public booking endpoints
   getPublicBookingTypes() { return this.publicGet('booking-types'); },
   getPublicInfo() { return this.publicGet('info'); },

@@ -7,13 +7,21 @@
 +$  event-id  @uv
 +$  booking-type-id  @uv
 +$  booking-id  @uv
++$  contact-calendar-id  @uv
 ::
 ::  core types
+::
++$  calendar-0
+  $:  name=@t
+      color=@ux
+      description=@t
+  ==
 ::
 +$  calendar
   $:  name=@t
       color=@ux
       description=@t
+      public=?
   ==
 ::
 +$  event
@@ -112,6 +120,28 @@
       description=@t
   ==
 ::
+::  contact calendars
+::
++$  contact-calendar
+  $:  =ship
+      =calendar-id
+      =calendar
+      events=(map event-id event)
+      enabled=?
+      last-updated=@da
+  ==
+::
+::  inter-ship calendar sharing
+::
++$  public-calendar-update
+  $%  [%full =calendar events=(map event-id event)]
+      [%event-added =event-id =event]
+      [%event-updated =event-id =event]
+      [%event-removed =event-id]
+      [%calendar-updated =calendar]
+      [%calendar-removed ~]
+  ==
+::
 ::  settings
 ::
 +$  settings
@@ -125,6 +155,19 @@
 ::
 +$  state-0
   $:  %0
+      calendars=(map calendar-id calendar-0)
+      calendar-order=(list calendar-id)
+      events=(map event-id event)
+      booking-types=(map booking-type-id booking-type)
+      availability-rules=(list availability-rule)
+      bookings=(map booking-id booking)
+      subscriptions=(map subscription-id calendar-subscription)
+      =booking-page
+      =settings
+  ==
+::
++$  state-1
+  $:  %1
       calendars=(map calendar-id calendar)
       calendar-order=(list calendar-id)
       events=(map event-id event)
@@ -134,6 +177,7 @@
       subscriptions=(map subscription-id calendar-subscription)
       =booking-page
       =settings
+      contact-calendars=(map contact-calendar-id contact-calendar)
   ==
 ::
 ::  poke actions
@@ -170,6 +214,12 @@
       [%subscribe-calendar url=@t cal-name=@t refresh-interval=@dr]
       [%unsubscribe-calendar =subscription-id]
       [%refresh-subscription =subscription-id]
+  ::
+      [%toggle-public =calendar-id]
+      [%subscribe-contact-calendar =ship =calendar-id]
+      [%unsubscribe-contact-calendar =contact-calendar-id]
+      [%toggle-contact-calendar =contact-calendar-id]
+      [%discover-contact-calendars =ship]
   ==
 ::
 ::  subscription updates
@@ -192,5 +242,12 @@
       [%subscription-added =subscription-id =calendar-subscription]
       [%subscription-removed =subscription-id]
       [%subscription-refreshed =subscription-id last-fetched=@da error=(unit @t)]
+  ::
+      [%calendar-publicity-changed =calendar-id public=?]
+      [%contact-calendar-added =contact-calendar-id =contact-calendar]
+      [%contact-calendar-removed =contact-calendar-id]
+      [%contact-calendar-updated =contact-calendar-id =contact-calendar]
+      [%contact-calendar-toggled =contact-calendar-id enabled=?]
+      [%discovered-calendars =ship calendars=(list [=calendar-id =calendar])]
   ==
 --

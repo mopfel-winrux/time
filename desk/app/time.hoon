@@ -2,6 +2,7 @@
 ::
 ::    manages calendars, events, booking types, availability,
 ::    and serves a JSON API via eyre including public booking endpoints.
+::    supports publishing public calendars to %contacts peers.
 ::
 /-  calendar, calendar-state
 /+  dbug, verb, server, default-agent, ical, rrule
@@ -31,10 +32,39 @@
     (sham (mix (sham uid.ev) start.ev))
   =.  uid.ev  ?:(=('' uid.ev) (scot %uv eid) uid.ev)
   $(evts t.evts, acc (~(put by acc) eid ev))
+::  +is-contact: check if a ship is in our %contacts directory
+::
+++  is-contact
+  |=  [our=@p now=@da her=ship]
+  ^-  ?
+  =/  result=(unit ?)
+    %-  mole
+    |.
+    =/  dir  .^((map ^ship *) %gx /(scot %p our)/contacts/(scot %da now)/v1/all/contact-directory-0)
+    (~(has by dir) her)
+  (fall result %.n)
+::  +get-contact-display-name: resolve ship to pet name, nickname, or @p
+::
+++  get-contact-display-name
+  |=  [our=@p now=@da her=ship]
+  ^-  @t
+  =/  result=(unit @t)
+    %-  mole
+    |.
+    =/  dir
+      .^((map ^ship (map @tas *)) %gx /(scot %p our)/contacts/(scot %da now)/v1/all/contact-directory-0)
+    =/  entry=(unit (map @tas *))  (~(get by dir) her)
+    ?~  entry  (scot %p her)
+    =/  nick=(unit *)  (~(get by u.entry) %nickname)
+    ?~  nick  (scot %p her)
+    =/  nick-text=@t  ;;(@t u.nick)
+    ?:  =('' nick-text)  (scot %p her)
+    nick-text
+  (fall result (scot %p her))
 --
 ::
 %-  agent:dbug
-=|  state-0:calendar
+=|  state-1:calendar
 =*  state  -
 %+  verb  |
 ^-  agent:gall
@@ -42,7 +72,6 @@
 +*  this   .
     def    ~(. (default-agent this %|) bowl)
 ::
-++  on-agent  on-agent:def
 ++  on-leave  on-leave:def
 ++  on-fail   on-fail:def
 ::
@@ -55,7 +84,30 @@
   ^-  (quip card _this)
   =/  old  !<(versioned-state:calendar-state vase)
   ?-  -.old
-    %0  `this(state old)
+    %1  `this(state old)
+  ::
+    %0
+  ::  migrate calendars: add public=%.n to each
+  =/  new-cals=(map calendar-id:calendar calendar:calendar)
+    %-  ~(run by calendars.old)
+    |=  old-cal=calendar-0:calendar
+    ^-  calendar:calendar
+    [name.old-cal color.old-cal description.old-cal %.n]
+  :-  ~
+  %=  this
+    state  :*  %1
+               new-cals
+               calendar-order.old
+               events.old
+               booking-types.old
+               availability-rules.old
+               bookings.old
+               subscriptions.old
+               booking-page.old
+               settings.old
+               *(map contact-calendar-id:calendar contact-calendar:calendar)
+           ==
+  ==
   ==
 ::
 ++  on-init
@@ -66,7 +118,7 @@
     [| 'Book a Meeting' 'Schedule time with me']
   ::  create a default calendar so users can start creating events immediately
   =/  cid=calendar-id:calendar  (sham (mix 'My Calendar' eny.bowl))
-  =/  cal=calendar:calendar  ['My Calendar' 0x39.8be2 '']
+  =/  cal=calendar:calendar  ['My Calendar' 0x39.8be2 '' %.n]
   :_  %=  this
         settings       default-settings
         booking-page   default-page
@@ -108,7 +160,7 @@
     ::
         %create-calendar
       =/  cid=calendar-id:calendar  (sham (mix name.act eny.bowl))
-      =/  cal=calendar:calendar  [name.act color.act description.act]
+      =/  cal=calendar:calendar  [name.act color.act description.act %.n]
       =/  upd=update:calendar  [%calendar-added cid cal]
       :_  %=  this
             calendars  (~(put by calendars) cid cal)
@@ -120,15 +172,23 @@
         %update-calendar
       =/  cid  calendar-id.act
       ?.  (~(has by calendars) cid)  `this
-      =/  cal=calendar:calendar  [name.act color.act description.act]
+      =/  old-cal=calendar:calendar  (~(got by calendars) cid)
+      =/  cal=calendar:calendar  [name.act color.act description.act public.old-cal]
       =/  upd=update:calendar  [%calendar-updated cid cal]
+      =/  cards=(list card)
+        :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
+        ==
+      ::  if calendar is public, notify subscribers of name/color change
+      =?  cards  public.old-cal
+        %+  snoc  cards
+        [%give %fact ~[/public/(scot %uv cid)] public-calendar-update+!>([%calendar-updated cal])]
       :_  this(calendars (~(put by calendars) cid cal))
-      :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
-      ==
+      cards
     ::
         %delete-calendar
       =/  cid  calendar-id.act
       ?.  (~(has by calendars) cid)  `this
+      =/  cal=calendar:calendar  (~(got by calendars) cid)
       ::  remove all events belonging to this calendar
       =/  evts-to-del=(list event-id:calendar)
         %+  murn  ~(tap by events)
@@ -139,13 +199,21 @@
       |-
       ?~  del-list
         =/  upd=update:calendar  [%calendar-removed cid]
+        =/  cards=(list card)
+          :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
+          ==
+        ::  if calendar was public, notify and kick subscribers
+        =?  cards  public.cal
+          %+  welp  cards
+          :~  [%give %fact ~[/public/(scot %uv cid)] public-calendar-update+!>([%calendar-removed ~])]
+              [%give %kick ~[/public/(scot %uv cid)] ~]
+          ==
         :_  %=  this
               calendars  (~(del by calendars) cid)
               calendar-order  (skip calendar-order |=(c=calendar-id:calendar =(c cid)))
               events  new-events
             ==
-        :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
-        ==
+        cards
       %=  $
         new-events  (~(del by new-events) i.del-list)
         del-list    t.del-list
@@ -161,9 +229,16 @@
       =.  created.ev  now.bowl
       =.  modified.ev  now.bowl
       =/  upd=update:calendar  [%event-added eid ev]
+      =/  cards=(list card)
+        :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
+        ==
+      ::  if calendar is public, notify subscribers
+      =/  cal=(unit calendar:calendar)  (~(get by calendars) calendar-id.ev)
+      =?  cards  ?&(?=(^ cal) public.u.cal)
+        %+  snoc  cards
+        [%give %fact ~[/public/(scot %uv calendar-id.ev)] public-calendar-update+!>([%event-added eid ev])]
       :_  this(events (~(put by events) eid ev))
-      :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
-      ==
+      cards
     ::
         %update-event
       =/  eid  event-id.act
@@ -174,17 +249,30 @@
       =.  uid.ev  ?:(=('' uid.ev) uid.old uid.ev)
       =.  created.ev  ?:(=(*@da created.ev) created.old created.ev)
       =/  upd=update:calendar  [%event-updated eid ev]
+      =/  cards=(list card)
+        :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
+        ==
+      =/  cal=(unit calendar:calendar)  (~(get by calendars) calendar-id.ev)
+      =?  cards  ?&(?=(^ cal) public.u.cal)
+        %+  snoc  cards
+        [%give %fact ~[/public/(scot %uv calendar-id.ev)] public-calendar-update+!>([%event-updated eid ev])]
       :_  this(events (~(put by events) eid ev))
-      :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
-      ==
+      cards
     ::
         %delete-event
       =/  eid  event-id.act
       ?.  (~(has by events) eid)  `this
+      =/  ev=event:calendar  (~(got by events) eid)
       =/  upd=update:calendar  [%event-removed eid]
+      =/  cards=(list card)
+        :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
+        ==
+      =/  cal=(unit calendar:calendar)  (~(get by calendars) calendar-id.ev)
+      =?  cards  ?&(?=(^ cal) public.u.cal)
+        %+  snoc  cards
+        [%give %fact ~[/public/(scot %uv calendar-id.ev)] public-calendar-update+!>([%event-removed eid])]
       :_  this(events (~(del by events) eid))
-      :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
-      ==
+      cards
     ::
         %move-event
       =/  eid  event-id.act
@@ -192,9 +280,15 @@
       ?~  ev  `this
       =/  new-ev=event:calendar  u.ev(start start.act, end end.act, modified now.bowl)
       =/  upd=update:calendar  [%event-updated eid new-ev]
+      =/  cards=(list card)
+        :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
+        ==
+      =/  cal=(unit calendar:calendar)  (~(get by calendars) calendar-id.u.ev)
+      =?  cards  ?&(?=(^ cal) public.u.cal)
+        %+  snoc  cards
+        [%give %fact ~[/public/(scot %uv calendar-id.u.ev)] public-calendar-update+!>([%event-updated eid new-ev])]
       :_  this(events (~(put by events) eid new-ev))
-      :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
-      ==
+      cards
     ::
         %create-booking-type
       =/  btid=booking-type-id:calendar  (sham (mix name.booking-type.act eny.bowl))
@@ -293,7 +387,7 @@
         =/  desc=@t
           ?~  cal-meta  ''
           description.u.cal-meta
-        [cal-name 0x39.8be2 desc]
+        [cal-name 0x39.8be2 desc %.n]
       =/  cards=(list card)  ~
       =/  new-events=(map event-id:calendar event:calendar)  events
       =/  new-calendars=(map calendar-id:calendar calendar:calendar)  calendars
@@ -319,7 +413,7 @@
     ::
         %subscribe-calendar
       =/  cid=calendar-id:calendar  (sham (mix url.act eny.bowl))
-      =/  cal=calendar:calendar  [cal-name.act 0x42.85f4 '']
+      =/  cal=calendar:calendar  [cal-name.act 0x42.85f4 '' %.n]
       =/  sid=subscription-id:calendar  (sham (mix cid eny.bowl))
       =/  sub=calendar-subscription:calendar
         [url.act cid refresh-interval.act *@da ~]
@@ -355,6 +449,61 @@
       ?~  sub  `this
       :_  this
       :~  [%pass /sub-fetch/(scot %uv sid) %arvo %i %request [%'GET' url.u.sub ~ ~] redirects=5 retries=3]
+      ==
+    ::
+    ::  contacts integration actions
+    ::
+        %toggle-public
+      =/  cid  calendar-id.act
+      =/  cal=(unit calendar:calendar)  (~(get by calendars) cid)
+      ?~  cal  `this
+      =/  new-pub=?  !public.u.cal
+      =/  new-cal=calendar:calendar  u.cal(public new-pub)
+      =/  upd=update:calendar  [%calendar-publicity-changed cid new-pub]
+      =/  cards=(list card)
+        :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
+        ==
+      ::  if going private, kick all subscribers on /public/[cid]
+      =?  cards  !new-pub
+        %+  snoc  cards
+        [%give %kick ~[/public/(scot %uv cid)] ~]
+      :_  this(calendars (~(put by calendars) cid new-cal))
+      cards
+    ::
+        %subscribe-contact-calendar
+      =/  ccid=contact-calendar-id:calendar
+        (sham (mix (mix ship.act calendar-id.act) eny.bowl))
+      =/  cc=contact-calendar:calendar
+        [ship.act calendar-id.act ['?' 0x88.8888 '' %.y] ~ %.y now.bowl]
+      =/  upd=update:calendar  [%contact-calendar-added ccid cc]
+      :_  this(contact-calendars (~(put by contact-calendars) ccid cc))
+      :~  [%pass /contact-cal/(scot %uv ccid) %agent [ship.act %time] %watch /public/(scot %uv calendar-id.act)]
+          [%give %fact ~[/updates] calendar-update+!>(upd)]
+      ==
+    ::
+        %unsubscribe-contact-calendar
+      =/  ccid  contact-calendar-id.act
+      =/  cc=(unit contact-calendar:calendar)  (~(get by contact-calendars) ccid)
+      ?~  cc  `this
+      =/  upd=update:calendar  [%contact-calendar-removed ccid]
+      :_  this(contact-calendars (~(del by contact-calendars) ccid))
+      :~  [%pass /contact-cal/(scot %uv ccid) %agent [ship.u.cc %time] %leave ~]
+          [%give %fact ~[/updates] calendar-update+!>(upd)]
+      ==
+    ::
+        %toggle-contact-calendar
+      =/  ccid  contact-calendar-id.act
+      =/  cc=(unit contact-calendar:calendar)  (~(get by contact-calendars) ccid)
+      ?~  cc  `this
+      =/  new-cc=contact-calendar:calendar  u.cc(enabled !enabled.u.cc)
+      =/  upd=update:calendar  [%contact-calendar-toggled ccid enabled.new-cc]
+      :_  this(contact-calendars (~(put by contact-calendars) ccid new-cc))
+      :~  [%give %fact ~[/updates] calendar-update+!>(upd)]
+      ==
+    ::
+        %discover-contact-calendars
+      :_  this
+      :~  [%pass /discover/(scot %p ship.act) %agent [ship.act %time] %watch /public-list]
       ==
     ==
   ::
@@ -443,6 +592,7 @@
               ['name' s+name.cal]
               ['color' s+(scot %ux color.cal)]
               ['description' s+description.cal]
+              ['public' b+public.cal]
               ['event-count' (numb:enjs:format ev-count)]
           ==
       ==
@@ -458,6 +608,7 @@
           ['name' s+name.u.cal]
           ['color' s+(scot %ux color.u.cal)]
           ['description' s+description.u.cal]
+          ['public' b+public.u.cal]
       ==
     ::
         [%events ~]
@@ -531,6 +682,17 @@
       =/  eid=(unit event-id:calendar)  (slaw %uv i.t.site)
       ?~  eid  not-found:gen:server
       =/  ev=(unit event:calendar)  (~(get by events) u.eid)
+      =/  is-contact=?  %.n
+      ::  if not found locally, search contact calendar events
+      =?  is-contact  ?=(~ ev)  %.y
+      =?  ev  ?=(~ ev)
+        =/  cc-list=(list [contact-calendar-id:calendar contact-calendar:calendar])
+          ~(tap by contact-calendars)
+        |-
+        ?~  cc-list  ~
+        =/  cev=(unit event:calendar)  (~(get by events.+.i.cc-list) u.eid)
+        ?^  cev  cev
+        $(cc-list t.cc-list)
       ?~  ev  not-found:gen:server
       %-  json-response:gen:server
       %-  pairs:enjs:format
@@ -545,6 +707,7 @@
           ['uid' s+uid.u.ev]
           ['created' (sect:enjs:format created.u.ev)]
           ['modified' (sect:enjs:format modified.u.ev)]
+          ['read-only' b+is-contact]
           :-  'reminders'
           :-  %a
           %+  turn  reminders.u.ev
@@ -642,6 +805,60 @@
           ==
       ==
     ::
+        [%'contact-calendars' ~]
+      %-  json-response:gen:server
+      %-  pairs:enjs:format
+      :~  :-  'contact-calendars'
+          :-  %a
+          %+  turn  ~(tap by contact-calendars)
+          |=  [ccid=contact-calendar-id:calendar cc=contact-calendar:calendar]
+          %-  pairs:enjs:format
+          :~  ['id' s+(scot %uv ccid)]
+              ['ship' s+(scot %p ship.cc)]
+              ['display-name' s+(get-contact-display-name our.bowl now.bowl ship.cc)]
+              ['calendar-id' s+(scot %uv calendar-id.cc)]
+              ['name' s+name.calendar.cc]
+              ['color' s+(scot %ux color.calendar.cc)]
+              ['description' s+description.calendar.cc]
+              ['enabled' b+enabled.cc]
+              ['last-updated' (sect:enjs:format last-updated.cc)]
+              :-  'events'
+              :-  %a
+              %+  turn  ~(tap by events.cc)
+              |=  [eid=event-id:calendar ev=event:calendar]
+              %-  pairs:enjs:format
+              :~  ['id' s+(scot %uv eid)]
+                  ['title' s+title.ev]
+                  ['description' s+description.ev]
+                  ['calendar-id' s+(scot %uv calendar-id.ev)]
+                  ['start' (sect:enjs:format start.ev)]
+                  ['end' (sect:enjs:format end.ev)]
+                  ['location' s+location.ev]
+                  ['all-day' b+all-day.ev]
+                  ['has-rrule' b+?=(^ rrule.ev)]
+                  ['uid' s+uid.ev]
+              ==
+          ==
+      ==
+    ::
+        [%contacts ~]
+      =/  peers=(unit (map ship *))
+        %-  mole
+        |.
+        .^((map ship *) %gx /(scot %p our.bowl)/contacts/(scot %da now.bowl)/v1/all/contact-directory-0)
+      %-  json-response:gen:server
+      %-  pairs:enjs:format
+      :~  :-  'contacts'
+          :-  %a
+          ?~  peers  ~
+          %+  turn  ~(tap by u.peers)
+          |=  [s=ship *]
+          %-  pairs:enjs:format
+          :~  ['ship' s+(scot %p s)]
+              ['display-name' s+(get-contact-display-name our.bowl now.bowl s)]
+          ==
+      ==
+    ::
         [%'export-ical' @ ~]
       =/  cid=(unit calendar-id:calendar)  (slaw %uv i.t.site)
       ?~  cid  not-found:gen:server
@@ -659,7 +876,7 @@
       ::  export all calendars
       =/  all-events=(list event:calendar)
         (turn ~(tap by events) |=([* ev=event:calendar] ev))
-      =/  cal=calendar:calendar  ['All Calendars' 0x0 '']
+      =/  cal=calendar:calendar  ['All Calendars' 0x0 '' %.n]
       =/  ics=@t  (generate-ical:ical cal all-events)
       :_  `(as-octs:mimes:html ics)
       [200 ['content-type' 'text/calendar'] ['content-disposition' 'attachment; filename="calendar.ics"'] ~]
@@ -991,6 +1208,23 @@
         ::
             %'refresh-subscription'
           [%refresh-subscription ((ot ~[subscription-id+(se %uv)]) jon)]
+        ::
+            %'toggle-public'
+          [%toggle-public ((ot ~[calendar-id+(se %uv)]) jon)]
+        ::
+            %'subscribe-contact-calendar'
+          =/  f  (ot ~[ship+(se %p) calendar-id+(se %uv)])
+          =/  [s=@p cid=@uv]  (f jon)
+          [%subscribe-contact-calendar s cid]
+        ::
+            %'unsubscribe-contact-calendar'
+          [%unsubscribe-contact-calendar ((ot ~[contact-calendar-id+(se %uv)]) jon)]
+        ::
+            %'toggle-contact-calendar'
+          [%toggle-contact-calendar ((ot ~[contact-calendar-id+(se %uv)]) jon)]
+        ::
+            %'discover-contact-calendars'
+          [%discover-contact-calendars ((ot ~[ship+(se %p)]) jon)]
         ==
       --
     --
@@ -1051,8 +1285,187 @@
   |=  =path
   ^-  (quip card _this)
   ?+  path  (on-watch:def path)
-    [%updates ~]    `this
+    [%updates ~]          `this
     [%http-response @ ~]  `this
+  ::
+      [%public @ ~]
+    ::  remote ship subscribes to one of our public calendars
+    =/  cid=(unit calendar-id:calendar)  (slaw %uv i.t.path)
+    ?~  cid  (on-watch:def path)
+    =/  cal=(unit calendar:calendar)  (~(get by calendars) u.cid)
+    ?~  cal  (on-watch:def path)
+    ?.  public.u.cal
+      ~|(%calendar-not-public !!)
+    ?.  (is-contact our.bowl now.bowl src.bowl)
+      ~|(%not-a-contact !!)
+    ::  send initial full snapshot
+    =/  cal-events=(map event-id:calendar event:calendar)
+      %-  ~(rep by events)
+      |=  [[eid=event-id:calendar ev=event:calendar] acc=(map event-id:calendar event:calendar)]
+      ?.  =(calendar-id.ev u.cid)  acc
+      (~(put by acc) eid ev)
+    =/  init=public-calendar-update:calendar
+      [%full u.cal cal-events]
+    :_  this
+    :~  [%give %fact ~ public-calendar-update+!>(init)]
+    ==
+  ::
+      [%public-list ~]
+    ::  remote ship discovers our public calendars (one-shot)
+    ?.  (is-contact our.bowl now.bowl src.bowl)
+      ~|(%not-a-contact !!)
+    =/  pub-cals=(list [calendar-id:calendar calendar:calendar])
+      %+  skim  ~(tap by calendars)
+      |=  [cid=calendar-id:calendar cal=calendar:calendar]
+      public.cal
+    =/  cal-list=json
+      :-  %a
+      %+  turn  pub-cals
+      |=  [cid=calendar-id:calendar cal=calendar:calendar]
+      %-  pairs:enjs:format
+      :~  ['calendar-id' s+(scot %uv cid)]
+          ['name' s+name.cal]
+          ['color' s+(scot %ux color.cal)]
+          ['description' s+description.cal]
+      ==
+    :_  this
+    :~  [%give %fact ~ json+!>(cal-list)]
+        [%give %kick ~ ~]
+    ==
+  ==
+::
+++  on-agent
+  |=  [=wire =sign:agent:gall]
+  ^-  (quip card _this)
+  ?+  wire  (on-agent:def wire sign)
+  ::
+      [%contact-cal @ ~]
+    =/  ccid=@uv  (slav %uv i.t.wire)
+    =/  cc=(unit contact-calendar:calendar)  (~(get by contact-calendars) ccid)
+    ?~  cc  `this
+    ?+  -.sign  (on-agent:def wire sign)
+    ::
+        %fact
+      ?.  =(%public-calendar-update p.cage.sign)  `this
+      =/  upd=public-calendar-update:calendar
+        !<(public-calendar-update:calendar q.cage.sign)
+      ?-  -.upd
+          %full
+        =/  new-cc=contact-calendar:calendar
+          u.cc(calendar calendar.upd, events events.upd, last-updated now.bowl)
+        =/  local-upd=update:calendar
+          [%contact-calendar-updated ccid new-cc]
+        :_  this(contact-calendars (~(put by contact-calendars) ccid new-cc))
+        :~  [%give %fact ~[/updates] calendar-update+!>(local-upd)]
+        ==
+      ::
+          %event-added
+        =/  new-evts  (~(put by events.u.cc) event-id.upd event.upd)
+        =/  new-cc=contact-calendar:calendar
+          u.cc(events new-evts, last-updated now.bowl)
+        :_  this(contact-calendars (~(put by contact-calendars) ccid new-cc))
+        :~  [%give %fact ~[/updates] calendar-update+!>([%contact-calendar-updated ccid new-cc])]
+        ==
+      ::
+          %event-updated
+        =/  new-evts  (~(put by events.u.cc) event-id.upd event.upd)
+        =/  new-cc=contact-calendar:calendar
+          u.cc(events new-evts, last-updated now.bowl)
+        :_  this(contact-calendars (~(put by contact-calendars) ccid new-cc))
+        :~  [%give %fact ~[/updates] calendar-update+!>([%contact-calendar-updated ccid new-cc])]
+        ==
+      ::
+          %event-removed
+        =/  new-evts  (~(del by events.u.cc) event-id.upd)
+        =/  new-cc=contact-calendar:calendar
+          u.cc(events new-evts, last-updated now.bowl)
+        :_  this(contact-calendars (~(put by contact-calendars) ccid new-cc))
+        :~  [%give %fact ~[/updates] calendar-update+!>([%contact-calendar-updated ccid new-cc])]
+        ==
+      ::
+          %calendar-updated
+        =/  new-cc=contact-calendar:calendar
+          u.cc(calendar calendar.upd, last-updated now.bowl)
+        :_  this(contact-calendars (~(put by contact-calendars) ccid new-cc))
+        :~  [%give %fact ~[/updates] calendar-update+!>([%contact-calendar-updated ccid new-cc])]
+        ==
+      ::
+          %calendar-removed
+        =/  local-upd=update:calendar  [%contact-calendar-removed ccid]
+        :_  this(contact-calendars (~(del by contact-calendars) ccid))
+        :~  [%give %fact ~[/updates] calendar-update+!>(local-upd)]
+        ==
+      ==
+    ::
+        %kick
+      ::  re-subscribe on kick (standard reconnection pattern)
+      =/  watch-path=path  /public/(scot %uv calendar-id.u.cc)
+      :_  this
+      :~  [%pass /contact-cal/(scot %uv ccid) %agent [ship.u.cc %time] %watch watch-path]
+      ==
+    ::
+        %watch-ack
+      ?~  p.sign  `this
+      ::  subscription rejected
+      ~&  [%time %contact-cal-rejected ccid u.p.sign]
+      `this
+    ==
+  ::
+      [%discover @ ~]
+    =/  her=@p  (slav %p i.t.wire)
+    ?+  -.sign  (on-agent:def wire sign)
+    ::
+        %fact
+      ?.  =(%json p.cage.sign)  `this
+      =/  jon=json  !<(json q.cage.sign)
+      ?.  ?=(%a -.jon)  `this
+      =/  cal-list=(list [calendar-id:calendar calendar:calendar])
+        %+  murn  p.jon
+        |=  item=json
+        ^-  (unit [calendar-id:calendar calendar:calendar])
+        =/  result=(unit [calendar-id:calendar calendar:calendar])
+          %-  mole
+          |.
+          =,  dejs:format
+          =/  f  (ot ~[calendar-id+(se %uv) name+so color+(se %ux) description+so])
+          =/  [cid=@uv n=@t c=@ux d=@t]  (f item)
+          [cid [n c d %.y]]
+        result
+      ::  check which calendars we already have subscribed
+      =/  existing=(set [ship calendar-id:calendar])
+        %-  ~(rep by contact-calendars)
+        |=  [[k=contact-calendar-id:calendar v=contact-calendar:calendar] acc=(set [ship calendar-id:calendar])]
+        (~(put in acc) [ship.v calendar-id.v])
+      ::  auto-subscribe to new calendars (disabled by default)
+      =/  new-cals=(list [calendar-id:calendar calendar:calendar])
+        %+  skip  cal-list
+        |=  [cid=calendar-id:calendar cal=calendar:calendar]
+        (~(has in existing) [her cid])
+      =/  cards=(list card)  ~
+      =/  new-ccs=(map contact-calendar-id:calendar contact-calendar:calendar)  contact-calendars
+      |-
+      ?~  new-cals
+        :_  this(contact-calendars new-ccs)
+        cards
+      =/  cid=calendar-id:calendar  -.i.new-cals
+      =/  cal=calendar:calendar  +.i.new-cals
+      =/  ccid=contact-calendar-id:calendar
+        (sham (mix (mix her cid) eny.bowl))
+      =/  cc=contact-calendar:calendar
+        [her cid cal ~ %.n now.bowl]
+      =/  upd=update:calendar  [%contact-calendar-added ccid cc]
+      %=  $
+        new-cals  t.new-cals
+        new-ccs   (~(put by new-ccs) ccid cc)
+        cards
+          :+  [%pass /contact-cal/(scot %uv ccid) %agent [her %time] %watch /public/(scot %uv cid)]
+            [%give %fact ~[/updates] calendar-update+!>(upd)]
+          cards
+      ==
+    ::
+        %kick  `this
+        %watch-ack  `this
+    ==
   ==
 ::
 ++  on-arvo
@@ -1133,6 +1546,7 @@
             :~  ['id' s+(scot %uv cid)]
                 ['name' s+name.cal]
                 ['color' s+(scot %ux color.cal)]
+                ['public' b+public.cal]
             ==
         ==
       ``json+!>(json)
