@@ -4,7 +4,6 @@
   |%
   ++  noun  upd
   ++  json
-    ^-  json
     =,  enjs:format
     ?-  -.upd
         %calendar-added

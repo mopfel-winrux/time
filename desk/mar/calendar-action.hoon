@@ -8,7 +8,7 @@
   |%
   ++  noun  action:calendar
   ++  json
-    |=  jon=json
+    |=  jon=^json
     ^-  action:calendar
     =,  dejs:format
     =/  typ=@t  ((ot ~[action+so]) jon)
@@ -110,11 +110,11 @@
     ==
   ::
   ++  parse-event
-    |=  jon=json
+    |=  jon=^json
     ^-  event:calendar
     =,  dejs:format
     =/  f
-      %~  ot  by
+      %-  ot
       :~  title+so
           description+so
           calendar-id+(se %uv)
@@ -134,8 +134,9 @@
         ?.  ?=(%o -.jon)  |
         (~(has by p.jon) 'rrule')
       ?.  has-rrule  ~
-      =/  rr-json=json  (~(got by p.jon) 'rrule')
-      ?:  =(~ rr-json)  ~
+      ?>  ?=(%o -.jon)
+      =/  rr-json  (~(got by p.jon) 'rrule')
+      ?~  rr-json  ~
       `(parse-rrule-json rr-json)
     :*  t
         d
@@ -152,7 +153,7 @@
     ==
   ::
   ++  parse-rrule-json
-    |=  jon=json
+    |=  jon=^json
     ^-  recurrence-rule:calendar
     =,  dejs:format
     =/  freq-str=@t  ((ot ~[freq+so]) jon)
@@ -178,14 +179,14 @@
     ==
   ::
   ++  parse-booking-type
-    |=  jon=json
+    |=  jon=^json
     ^-  booking-type:calendar
     =,  dejs:format
     =/  f
-      (ot ~[name+so duration+ni description+so color+(se %ux) calendar-id+(se %uv) buffer-time+ni active+bo])
-    =/  [n=@t dur=@ud d=@t c=@ux cid=@uv bt=@ud a=?]
+      (ot ~[name+so duration+ni description+so color+(se %ux) calendar-id+(se %uv) buffer-time+ni active+bo conflict-calendars+(ar (se %uv))])
+    =/  [n=@t dur=@ud d=@t c=@ux cid=@uv bt=@ud a=? cc=(list @uv)]
       (f jon)
-    [n dur d c cid bt a]
+    [n dur d c cid bt a cc]
   ::
   ++  from-unix
     |=  u=@ud
